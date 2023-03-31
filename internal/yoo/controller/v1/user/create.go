@@ -12,7 +12,14 @@ import (
 	"phos.cc/yoo/pkg/auth"
 )
 
-// Create a new user.
+// Create @Summary Create
+// @Description create a new user
+// @Tags User
+// @Accept  json
+// @Produce  json
+// @Param   CreateUserRequest body   v1.CreateUserRequest true "Create User Request"
+// @Success 200
+// @Router /users [post]
 func (ctrl *UserController) Create(c *gin.Context) {
 	log.C(c).Infow("Create user function called")
 

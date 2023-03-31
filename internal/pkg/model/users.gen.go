@@ -16,8 +16,9 @@ type UserM struct {
 	Email     string    `gorm:"column:email;not null" json:"email"`
 	Nickname  string    `gorm:"column:nickname;not null" json:"nickname"`
 	Password  string    `gorm:"column:password;not null" json:"password"`
-	CreatedAt time.Time `gorm:"column:created_at;not null;default:now()" json:"created_at"`
-	UpdatedAt time.Time `gorm:"column:updated_at;not null;default:now()" json:"updated_at"`
+	CreatedAt time.Time `gorm:"column:created_at;not null" json:"created_at"`
+	UpdatedAt time.Time `gorm:"column:updated_at;not null" json:"updated_at"`
+	Avatar    string    `gorm:"column:avatar;not null" json:"avatar"`
 }
 
 // TableName UserM's table name

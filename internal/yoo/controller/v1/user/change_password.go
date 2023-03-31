@@ -11,6 +11,16 @@ import (
 	v1 "phos.cc/yoo/pkg/api/yoo/v1"
 )
 
+// ChangePassword @Summary change password
+// @Description change password
+// @Tags User
+// @Security BearerAuth
+// @Accept  json
+// @Produce  json
+// @Param   ChangePasswordRequest body   v1.ChangePasswordRequest true "Change Password Request"
+// @Param        email   path      string  true  "User Email"
+// @Success 200
+// @Router /users/{email}/change-password [patch]
 func (ctrl *UserController) ChangePassword(c *gin.Context) {
 	log.C(c).Infow("Change password function called")
 

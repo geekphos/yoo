@@ -69,12 +69,22 @@ func NewYooCommand() *cobra.Command {
 // @license.name Apache 2.0
 // @license.url http://www.apache.org/licenses/LICENSE-2.0.html
 
-// @host petstore.swagger.io:8080
+// @host localhost:8080
+
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+
 // @BasePath /v1
 func run() error {
 
 	// 初始化数据库
 	if err := initStore(); err != nil {
+		return err
+	}
+
+	// 初始化 oss 对象存储
+	if err := initOss(); err != nil {
 		return err
 	}
 
@@ -84,7 +94,7 @@ func run() error {
 	}
 
 	// 初始化 JWT
-	token.Init(viper.GetString("jwt-secret"), known.XEmailKey)
+	token.Init(viper.GetString("jwt-secret"), known.XEmailKey, known.XUserIDKey)
 
 	gin.SetMode(viper.GetString("runmode"))
 
@@ -102,7 +112,7 @@ func run() error {
 
 	httpsrv := &http.Server{Addr: ":8080", Handler: r}
 
-	log.Infow("Start to listening the incoming requests on http address", "addr", viper.GetString("addr"))
+	log.Infow("Start to listening the incoming requests on http address", "addr", ":8080")
 
 	go func() {
 

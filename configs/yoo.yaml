@@ -4,7 +4,7 @@ jwt-secret: Rtg8BPKNEf2mB4mgvKONGPZZQSaJWNLijxR42qRgq0iBb5 # JWT 密钥
 
 # MySQL 数据库相关配置
 db:
-  host: 192.168.31.120:3306  # MySQL 机器 IP 和端口，默认 127.0.0.1:3306
+  host: 127.0.0.1  # MySQL 机器 IP 和端口，默认 127.0.0.1:3306
   username: root # MySQL 用户名(建议授权最小权限集)
   password: root # MySQL 用户密码
   database: yoo # yoo 系统所用的数据库名
@@ -20,3 +20,9 @@ log:
   level: debug
   format: console
   output-paths: [ /tmp/yoo.log, stdout ]
+
+# oss 配置
+minio:
+  endpoint: 192.168.31.120:9000
+  access-key: OSSKPV6lxWXd8vM9
+  secret-key: HznWhayfBdg6VJq6QCYJcPFrikSdMrsa

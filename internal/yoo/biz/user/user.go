@@ -18,13 +18,14 @@ type UserBiz interface {
 	ChangePassword(ctx context.Context, email string, r *v1.ChangePasswordRequest) error
 	Create(ctx context.Context, r *v1.CreateUserRequest) error
 	Login(ctx context.Context, r *v1.LoginRequest) (*v1.LoginResponse, error)
+	Profile(ctx context.Context, email string) (*v1.ProfileResponse, error)
 }
 
 type userBiz struct {
 	ds store.IStore
 }
 
-var _UserBiz = (*userBiz)(nil)
+var _ UserBiz = (*userBiz)(nil)
 
 func New(ds store.IStore) *userBiz {
 	return &userBiz{ds: ds}
@@ -45,7 +46,7 @@ func (b *userBiz) Create(ctx context.Context, r *v1.CreateUserRequest) error {
 }
 
 func (b *userBiz) Login(ctx context.Context, r *v1.LoginRequest) (*v1.LoginResponse, error) {
-	user, err := b.ds.Users().Get(ctx, r.Email)
+	user, err := b.ds.Users().GetByEmail(ctx, r.Email)
 	if err != nil {
 		return nil, errno.ErrUserNotFound
 	}
@@ -56,7 +57,7 @@ func (b *userBiz) Login(ctx context.Context, r *v1.LoginRequest) (*v1.LoginRespo
 	}
 
 	// generate token
-	t, err := token.Sign(user.Email)
+	t, err := token.Sign(user.Email, int(user.ID))
 	if err != nil {
 		return nil, errno.ErrSignToken
 	}
@@ -67,7 +68,7 @@ func (b *userBiz) Login(ctx context.Context, r *v1.LoginRequest) (*v1.LoginRespo
 }
 
 func (b *userBiz) ChangePassword(ctx context.Context, email string, r *v1.ChangePasswordRequest) error {
-	userM, err := b.ds.Users().Get(ctx, email)
+	userM, err := b.ds.Users().GetByEmail(ctx, email)
 	if err != nil {
 		return errno.ErrUserNotFound
 	}
@@ -81,4 +82,16 @@ func (b *userBiz) ChangePassword(ctx context.Context, email string, r *v1.Change
 		return errno.InternalServerError
 	}
 	return nil
+}
+
+func (b *userBiz) Profile(ctx context.Context, email string) (*v1.ProfileResponse, error) {
+	userM, err := b.ds.Users().GetByEmail(ctx, email)
+	if err != nil {
+		return nil, errno.ErrUserNotFound
+	}
+
+	var resp = &v1.ProfileResponse{}
+	_ = copier.Copy(resp, userM)
+
+	return resp, nil
 }

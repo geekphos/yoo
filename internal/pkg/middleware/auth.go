@@ -10,7 +10,7 @@ import (
 
 func Auth() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		email, err := token.ParseRequest(c)
+		email, id, err := token.ParseRequest(c)
 		if err != nil {
 			core.WriteResponse(c, errno.ErrTokenInvalid, nil)
 
@@ -19,6 +19,7 @@ func Auth() gin.HandlerFunc {
 		}
 
 		c.Set(known.XEmailKey, email)
+		c.Set(known.XUserIDKey, id)
 		c.Next()
 	}
 }

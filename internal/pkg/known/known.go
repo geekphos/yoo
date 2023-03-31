@@ -6,4 +6,7 @@ const (
 
 	// XEmailKey 用来定义 Gin 上下文的键，代表请求的所有者.
 	XEmailKey = "X-Email"
+
+	// XUserIDKey 用来定义 Gin 上下文的键，代表请求的所有者.
+	XUserIDKey = "X-User-ID"
 )

@@ -1,5 +1,34 @@
 basePath: /v1
 definitions:
+  v1.ChangePasswordRequest:
+    properties:
+      newPassword:
+        maxLength: 14
+        minLength: 6
+        type: string
+      oldPassword:
+        maxLength: 14
+        minLength: 6
+        type: string
+    required:
+    - newPassword
+    - oldPassword
+    type: object
+  v1.CreateUserRequest:
+    properties:
+      email:
+        type: string
+      nickname:
+        type: string
+      password:
+        maxLength: 14
+        minLength: 6
+        type: string
+    required:
+    - email
+    - nickname
+    - password
+    type: object
   v1.LoginRequest:
     properties:
       email:
@@ -17,7 +46,22 @@ definitions:
       token:
         type: string
     type: object
-host: petstore.swagger.io:8080
+  v1.ProfileResponse:
+    properties:
+      avatar:
+        type: string
+      created_at:
+        type: string
+      email:
+        type: string
+      id:
+        type: integer
+      nickname:
+        type: string
+      updated_at:
+        type: string
+    type: object
+host: localhost:8080
 info:
   contact:
     email: support@swagger.io
@@ -31,7 +75,7 @@ info:
   title: Swagger Example API
   version: "1.0"
 paths:
-  /v1/login:
+  /login:
     post:
       consumes:
       - application/json
@@ -50,4 +94,72 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/v1.LoginResponse'
+      tags:
+      - User
+  /users:
+    post:
+      consumes:
+      - application/json
+      description: create a new user
+      parameters:
+      - description: Create User Request
+        in: body
+        name: CreateUserRequest
+        required: true
+        schema:
+          $ref: '#/definitions/v1.CreateUserRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+      tags:
+      - User
+  /users/{email}/change-password:
+    patch:
+      consumes:
+      - application/json
+      description: change password
+      parameters:
+      - description: Change Password Request
+        in: body
+        name: ChangePasswordRequest
+        required: true
+        schema:
+          $ref: '#/definitions/v1.ChangePasswordRequest'
+      - description: User Email
+        in: path
+        name: email
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+      security:
+      - BearerAuth: []
+      tags:
+      - User
+  /users/profile:
+    get:
+      consumes:
+      - application/json
+      description: Get user profile
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.ProfileResponse'
+      security:
+      - BearerAuth: []
+      tags:
+      - User
+securityDefinitions:
+  BearerAuth:
+    in: header
+    name: Authorization
+    type: apiKey
 swagger: "2.0"

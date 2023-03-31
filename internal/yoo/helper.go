@@ -2,12 +2,15 @@ package yoo
 
 import (
 	"os"
-	"phos.cc/yoo/internal/pkg/log"
-	"phos.cc/yoo/internal/yoo/store"
-	"phos.cc/yoo/pkg/db"
+	"phos.cc/yoo/internal/yoo/storage"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+
+	"phos.cc/yoo/internal/pkg/log"
+	"phos.cc/yoo/internal/yoo/store"
+	"phos.cc/yoo/pkg/db"
+	"phos.cc/yoo/pkg/oss"
 )
 
 const (
@@ -74,6 +77,22 @@ func initStore() error {
 		return err
 	} else {
 		_ = store.NewStore(ins)
+	}
+
+	return nil
+}
+
+func initOss() error {
+	ossOptions := &oss.MinioOptions{
+		Endpoint:        viper.GetString("minio.endpoint"),
+		AccessKeyID:     viper.GetString("minio.access-key"),
+		SecretAccessKey: viper.GetString("minio.secret-key"),
+	}
+
+	if ins, err := oss.NewMinio(ossOptions); err != nil {
+		return err
+	} else {
+		storage.InitStorage(ins)
 	}
 
 	return nil

@@ -27,6 +27,9 @@ func main() {
 
 	g.GenerateModelAs("users", "UserM")
 	g.GenerateModelAs("templates", "TemplateM")
+	g.GenerateModelAs("projects", "ProjectM")
+	g.GenerateModelAs("plans", "PlanM")
+	g.GenerateModelAs("tasks", "TaskM")
 
 	g.Execute()
 }

@@ -12,13 +12,17 @@ var (
 
 type IStore interface {
 	Users() UserStore
+	Templates() TemplateStore
+	Projects() ProjectStore
+	Plans() PlanStore
+	Tasks() TaskStore
 }
 
 type database struct {
 	db *gorm.DB
 }
 
-var _IStore = (*database)(nil)
+var _ IStore = (*database)(nil)
 
 // NewStore returns a new store.
 func NewStore(db *gorm.DB) *database {
@@ -30,4 +34,20 @@ func NewStore(db *gorm.DB) *database {
 
 func (ds *database) Users() UserStore {
 	return newUsers(ds.db)
+}
+
+func (ds *database) Templates() TemplateStore {
+	return newTemplates(ds.db)
+}
+
+func (ds *database) Projects() ProjectStore {
+	return newProjects(ds.db)
+}
+
+func (ds *database) Plans() PlanStore {
+	return newPlans(ds.db)
+}
+
+func (ds *database) Tasks() TaskStore {
+	return newTasks(ds.db)
 }

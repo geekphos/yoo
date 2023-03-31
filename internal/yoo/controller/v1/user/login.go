@@ -13,11 +13,12 @@ import (
 
 // Login @Summary Login
 // @Description Login with username and password
+// @Tags User
 // @Accept  json
 // @Produce  json
 // @Param   LoginRequest body   v1.LoginRequest true "Login Request"
 // @Success 200 {object} v1.LoginResponse
-// @Router /v1/login [post]
+// @Router /login [post]
 func (ctrl *UserController) Login(c *gin.Context) {
 	log.C(c).Infow("Login function called")
 
@@ -31,11 +32,9 @@ func (ctrl *UserController) Login(c *gin.Context) {
 		return
 	}
 
-	resp, err := ctrl.b.Users().Login(c, &r)
-	if err != nil {
+	if resp, err := ctrl.b.Users().Login(c, &r); err != nil {
 		core.WriteResponse(c, err, nil)
-		return
+	} else {
+		core.WriteResponse(c, nil, resp)
 	}
-
-	core.WriteResponse(c, nil, resp)
 }

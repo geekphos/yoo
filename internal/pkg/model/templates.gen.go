@@ -17,8 +17,8 @@ type TemplateM struct {
 	Name      string    `gorm:"column:name;not null" json:"name"`
 	Repo      string    `gorm:"column:repo;not null" json:"repo"`
 	Brief     string    `gorm:"column:brief;not null" json:"brief"`
-	CreatedAt time.Time `gorm:"column:created_at;not null;default:now()" json:"created_at"`
-	UpdatedAt time.Time `gorm:"column:updated_at;not null;default:now()" json:"updated_at"`
+	CreatedAt time.Time `gorm:"column:created_at;not null" json:"created_at"`
+	UpdatedAt time.Time `gorm:"column:updated_at;not null" json:"updated_at"`
 }
 
 // TableName TemplateM's table name
