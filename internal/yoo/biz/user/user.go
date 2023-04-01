@@ -33,7 +33,7 @@ func New(ds store.IStore) *userBiz {
 
 func (b *userBiz) Create(ctx context.Context, r *v1.CreateUserRequest) error {
 	var userM = &model.UserM{}
-	_ = copier.Copy(userM, r)
+	_ = copier.CopyWithOption(userM, r, copier.Option{IgnoreEmpty: true})
 
 	if err := b.ds.Users().Create(ctx, userM); err != nil {
 		if match, _ := regexp.MatchString("Duplicate entry '.*' for key 'email'", err.Error()); match {

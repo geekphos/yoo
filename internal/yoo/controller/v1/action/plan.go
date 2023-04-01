@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -19,9 +20,11 @@ import (
 
 	"phos.cc/yoo/internal/pkg/core"
 	"phos.cc/yoo/internal/pkg/errno"
+	"phos.cc/yoo/internal/pkg/known"
 	"phos.cc/yoo/internal/pkg/log"
 	veldt "phos.cc/yoo/internal/pkg/validator"
 	"phos.cc/yoo/internal/yoo/biz"
+	"phos.cc/yoo/internal/yoo/socket_client"
 	"phos.cc/yoo/internal/yoo/storage"
 	v1 "phos.cc/yoo/pkg/api/yoo/v1"
 )
@@ -46,10 +49,34 @@ func (ctrl *ActionController) ExecPlan(c *gin.Context) {
 	c.JSON(200, gin.H{})
 }
 
-func (ctrl *ActionController) Download(c *gin.Context) {}
+func (ctrl *ActionController) Download(c *gin.Context) {
+	pid, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		core.WriteResponse(c, errno.ErrInvalidParameter, nil)
+		return
+	}
+	// 压缩 bundles 目录
+	bundles := fmt.Sprintf("/tmp/.yoo/project-%d/bundles", pid)
+	zipFile := fmt.Sprintf("/tmp/.yoo/project-%d/bundles.zip", pid)
+	if err := compressDir(bundles, zipFile); err != nil {
+		core.WriteResponse(c, errno.InternalServerError, nil)
+		return
+	}
+
+	// 返回给前端
+	c.FileAttachment(zipFile, "bundles.zip")
+}
 
 func execPlan(c context.Context, b biz.Biz, pid int32, gid int32, isMicro bool) {
 	log.C(c).Infow("exec plan", "pid", pid, "gid", gid)
+
+	email := c.Value(known.XEmailKey).(string)
+	conn := socket_client.GetConn(email)
+
+	if conn == nil {
+		log.Errorw("get socket conn", "err", "conn is nil")
+		return
+	}
 
 	// 检查缓存目录
 	log.Infow("check home dir", "home", "/tmp/.yoo")
@@ -60,11 +87,17 @@ func execPlan(c context.Context, b biz.Biz, pid int32, gid int32, isMicro bool) 
 		return
 	}
 
-	assets := fmt.Sprintf("%s/assets", home)
+	www := fmt.Sprintf("%s/www", home)
 
-	// 检查 assets 目录是否存在
-	if err := checkDir(assets); err != nil {
-		log.Errorw("check assets dir", "err", err)
+	// 检查 www 目录是否存在
+	if err := checkDir(www); err != nil {
+		log.Errorw("check www dir", "err", err)
+		return
+	}
+
+	// cleanup www 目录
+	if err := cleanupDir(www); err != nil {
+		log.Errorw("cleanup www dir", "err", err)
 		return
 	}
 
@@ -72,6 +105,12 @@ func execPlan(c context.Context, b biz.Biz, pid int32, gid int32, isMicro bool) 
 	bundles := fmt.Sprintf("%s/bundles", home)
 	if err := checkDir(bundles); err != nil {
 		log.Errorw("check bundles dir", "err", err)
+		return
+	}
+
+	// cleanup bundles 目录
+	if err := cleanupDir(bundles); err != nil {
+		log.Errorw("cleanup bundles dir", "err", err)
 		return
 	}
 
@@ -132,8 +171,27 @@ CREATE TABLE IF NOT EXISTS ` + "`resources`" + `
 			g.Go(func() error {
 				select {
 				case <-ctx.Done():
+					// 将任务状态更新成 失败
+					b.Tasks().Update(ctx, &v1.UpdateTaskRequest{Status: 3}, task.ID)
+					conn.WriteJSON(gin.H{
+						"event": "task",
+						"data": gin.H{
+							"id":     task.ID,
+							"status": 3,
+						},
+					})
 					return ctx.Err()
 				default:
+					// 将任务状态更新成 执行中
+					b.Tasks().Update(ctx, &v1.UpdateTaskRequest{Status: 2}, task.ID)
+					// 通过 websocket 发送消息
+					conn.WriteJSON(gin.H{
+						"event": "task",
+						"data": gin.H{
+							"id":     task.ID,
+							"status": 2,
+						},
+					})
 					log.Infow("query project", "id", task.ProjectID)
 					// 1. 查询 project
 					p, err := b.Projects().Get(c, task.ProjectID)
@@ -183,9 +241,9 @@ CREATE TABLE IF NOT EXISTS ` + "`resources`" + `
 					}
 					log.Infow("build success", "output", string(output))
 
-					// 拷贝打包出的文件至 assets 下
+					// 拷贝打包出的文件至 www 下
 					src := fmt.Sprintf("%s/%s", dir, p.Dist)
-					dst := fmt.Sprintf("%s/%s", assets, p.Name)
+					dst := fmt.Sprintf("%s/%s", www, p.Name)
 					if err := copyDir(src, dst); err != nil {
 						log.Errorw("copy dir", "err", err)
 						return err
@@ -202,25 +260,25 @@ CREATE TABLE IF NOT EXISTS ` + "`resources`" + `
 
 					sqlsb.WriteString(fmt.Sprintf("INSERT INTO `resources` (`name`, `label`, `badge`, `created_at`, `updated_at`) VALUES ('%s', '%s', '%s', NOW(), NOW())", p.Name, p.Description, ""))
 
-					//TODO: 8. 检查存储桶
-					//bucketName := fmt.Sprintf("yoo")
-					//if err := checkBucket(c, bucketName); err != nil {
-					//	return err
-					//}
-
-					//TODO: 9. 上传文件
-					//dist := fmt.Sprintf("%s/%s", dir, p.Dist)
-					//if err := uploadFiles(c, bucketName, p.Name, dist); err != nil {
-					//	return err
-					//}
-
-					log.Infow("task done")
+					// 将任务状态更新成 空闲
+					b.Tasks().Update(ctx, &v1.UpdateTaskRequest{Status: 4}, task.ID)
+					conn.WriteJSON(gin.H{
+						"event": "task",
+						"data": gin.H{
+							"id":     task.ID,
+							"status": 4,
+						},
+					})
 					return nil
 				}
 			})
 		}
 		if err := g.Wait(); err != nil {
 			log.Errorw("exec plan error", "err", err)
+			conn.WriteJSON(gin.H{
+				"event":   "project",
+				"message": "exec plan error",
+			})
 			return
 		}
 	}
@@ -234,21 +292,21 @@ CREATE TABLE IF NOT EXISTS ` + "`resources`" + `
 }
 `)
 
-	// 将 assets 目录下的文件压缩到 bundles 目录下
-	if err := compressDir(assets, fmt.Sprintf("%s/assets.zip", bundles)); err != nil {
-		log.Errorw("compress dir", "err", err)
+	// 将 www 目录拷贝到 bundles/www 目录下
+	if err := copyDir(www, fmt.Sprintf("%s/www", bundles)); err != nil {
+		log.Errorw("copy dir", "err", err)
 		return
 	}
 
-	// 在 bundles 目录下生成 nginx.conf
-	file, err := os.Create(fmt.Sprintf("%s/nginx.conf", bundles))
+	// 在 bundles 目录下生成 default.conf
+	file, err := os.Create(fmt.Sprintf("%s/default.conf", bundles))
 	if err != nil {
-		log.Errorw("create nginx.conf error", "err", err)
+		log.Errorw("create default.conf error", "err", err)
 		return
 	}
 	defer file.Close()
 	if _, err := file.WriteString(nginxsb.String()); err != nil {
-		log.Errorw("write nginx.conf error", "err", err)
+		log.Errorw("write default.conf error", "err", err)
 		return
 	}
 
@@ -261,6 +319,42 @@ CREATE TABLE IF NOT EXISTS ` + "`resources`" + `
 	defer file.Close()
 	if _, err := file.WriteString(sqlsb.String()); err != nil {
 		log.Errorw("write sql error", "err", err)
+		return
+	}
+
+	// 在 bundles 目录下生成 docker-compose.yml
+	dockersb := `
+version: "3.9"
+services:
+  yoo-mysql:
+    image: "mysql:latest"
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  yoo-nginx:
+    image: "nginx:latest"
+    restart: always
+    ports:
+      - "8989:80"
+    volumes:
+      - ./default.conf:/etc/nginx/conf.d/default.conf
+      - ./www:/usr/share/nginx/www
+    depends_on:
+      - yoo-mysql
+
+`
+	file, err = os.Create(fmt.Sprintf("%s/docker-compose.yml", bundles))
+	if err != nil {
+		log.Errorw("create docker-compose.yml error", "err", err)
+		return
+	}
+	defer file.Close()
+
+	if _, err := file.WriteString(dockersb); err != nil {
+		log.Errorw("write docker-compose.yml error", "err", err)
 		return
 	}
 }

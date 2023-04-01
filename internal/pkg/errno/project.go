@@ -6,4 +6,7 @@ var (
 
 	// ErrProjectNotFound is returned when the project is not found.
 	ErrProjectNotFound = &Errno{HTTP: 404, Code: "FailedOperation.ProjectNotFound", Message: "Project not found."}
+
+	// ErrCompressBundles is returned when the compress bundles failed.
+	ErrCompressBundles = &Errno{HTTP: 500, Code: "FailedOperation.CompressBundles", Message: "Compress bundles failed."}
 )

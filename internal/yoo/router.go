@@ -4,14 +4,15 @@ import (
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
-	"phos.cc/yoo/internal/yoo/controller/v1/action"
 
 	_ "phos.cc/yoo/docs"
 	"phos.cc/yoo/internal/pkg/core"
 	"phos.cc/yoo/internal/pkg/errno"
 	mw "phos.cc/yoo/internal/pkg/middleware"
+	"phos.cc/yoo/internal/yoo/controller/v1/action"
 	"phos.cc/yoo/internal/yoo/controller/v1/plan"
 	"phos.cc/yoo/internal/yoo/controller/v1/project"
+	"phos.cc/yoo/internal/yoo/controller/v1/socket"
 	"phos.cc/yoo/internal/yoo/controller/v1/task"
 	"phos.cc/yoo/internal/yoo/controller/v1/template"
 	"phos.cc/yoo/internal/yoo/controller/v1/user"
@@ -33,6 +34,11 @@ func installRouters(g *gin.Engine) error {
 
 	// 创建 v1 路由分组
 	v1 := g.Group("/v1")
+
+	sc := socket.New()
+
+	v1.GET("/ws", sc.Connect)
+
 	{
 
 		// 创建 users 路由分组
@@ -94,6 +100,8 @@ func installRouters(g *gin.Engine) error {
 		ac := action.New(store.S)
 		actionv1 := v1.Group("/actions")
 		{
+			actionv1.GET("/download/bundles/:id", ac.Download)
+
 			actionv1.Use(mw.Auth())
 			actionv1.POST("/exec/plan", ac.ExecPlan)
 		}

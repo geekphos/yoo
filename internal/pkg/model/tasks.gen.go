@@ -14,7 +14,7 @@ const TableNameTaskM = "tasks"
 type TaskM struct {
 	ID        int32     `gorm:"column:id;primaryKey;autoIncrement:true" json:"id"`
 	PlanID    int32     `gorm:"column:plan_id;not null" json:"plan_id"`
-	Status    int32     `gorm:"column:status;default:1" json:"status"` // 任务状态: 1 空闲, 2 进行中, 3 失败
+	Status    int32     `gorm:"column:status;default:1" json:"status"` // 任务状态: 1 空闲, 2 进行中, 3 失败, 4 成功
 	ProjectID int32     `gorm:"column:project_id;not null" json:"project_id"`
 	CreatedAt time.Time `gorm:"column:created_at;not null" json:"created_at"`
 	UpdatedAt time.Time `gorm:"column:updated_at;not null" json:"updated_at"`
