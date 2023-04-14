@@ -6,12 +6,13 @@ import (
 	"phos.cc/yoo/internal/pkg/errno"
 	"phos.cc/yoo/internal/pkg/known"
 	"phos.cc/yoo/pkg/token"
+	"time"
 )
 
 func Auth() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		email, id, err := token.ParseRequest(c)
-		if err != nil {
+		email, id, tokenType, exp, err := token.ParseRequest(c)
+		if err != nil || tokenType != token.AccessToken || exp.Before(time.Now()) {
 			core.WriteResponse(c, errno.ErrTokenInvalid, nil)
 
 			c.Abort()

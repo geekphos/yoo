@@ -7,7 +7,7 @@ import (
 
 var (
 	conns = make(map[string]*websocket.Conn)
-	mt    = sync.RWMutex{}
+	mt    = sync.Mutex{}
 )
 
 func AddConn(key string, conn *websocket.Conn) {
@@ -17,16 +17,35 @@ func AddConn(key string, conn *websocket.Conn) {
 	conns[key] = conn
 }
 
-func GetConn(key string) *websocket.Conn {
-	mt.RLock()
-	defer mt.RUnlock()
-
-	return conns[key]
-}
-
 func RemoveConn(key string) {
 	mt.Lock()
 	defer mt.Unlock()
 
 	delete(conns, key)
+}
+
+func WriteMessage(key, msg string) bool {
+	mt.Lock()
+	defer mt.Unlock()
+	if conn, ok := conns[key]; ok {
+		if err := conn.WriteMessage(websocket.TextMessage, []byte(msg)); err != nil {
+			return false
+		}
+		return true
+	}
+
+	return false
+}
+
+func WriteJSON(key string, v interface{}) bool {
+	mt.Lock()
+	defer mt.Unlock()
+	if conn, ok := conns[key]; ok {
+		if err := conn.WriteJSON(v); err != nil {
+			return false
+		}
+		return true
+	}
+
+	return false
 }

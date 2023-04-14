@@ -15,6 +15,7 @@ import (
 type TemplateBiz interface {
 	Create(ctx context.Context, r *v1.CreateTemplateRequest, id int32) error
 	Get(ctx context.Context, id int32) (*v1.GetTemplateResponse, error)
+	List(ctx context.Context, r *v1.ListTemplateRequest) ([]*v1.ListTemplateResponse, int64, error)
 }
 
 type templateBiz struct {
@@ -54,4 +55,32 @@ func (b *templateBiz) Get(ctx context.Context, id int32) (*v1.GetTemplateRespons
 	resp.Username = user.Nickname
 
 	return resp, nil
+}
+
+func (b *templateBiz) List(ctx context.Context, r *v1.ListTemplateRequest) ([]*v1.ListTemplateResponse, int64, error) {
+	var templateM = &model.TemplateM{}
+	_ = copier.Copy(templateM, r)
+
+	templates, count, err := b.ds.Templates().List(ctx, r.Page, r.PageSize, templateM)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	var resp = make([]*v1.ListTemplateResponse, 0, len(templates))
+	var userMap = make(map[int32]string)
+	for _, template := range templates {
+		var r = &v1.ListTemplateResponse{}
+		_ = copier.Copy(r, template)
+		if _, ok := userMap[template.UserID]; !ok {
+			user, err := b.ds.Users().Get(ctx, template.UserID)
+			if err != nil {
+				return nil, 0, errno.InternalServerError
+			}
+			userMap[template.UserID] = user.Nickname
+		}
+		r.Username = userMap[template.UserID]
+		resp = append(resp, r)
+	}
+
+	return resp, count, nil
 }

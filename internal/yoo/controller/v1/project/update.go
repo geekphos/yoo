@@ -1,8 +1,6 @@
 package project
 
 import (
-	"strconv"
-
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
 
@@ -23,14 +21,7 @@ func (ctrl *ProjectController) Update(c *gin.Context) {
 		return
 	}
 
-	var id int
-	id, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		core.WriteResponse(c, errno.ErrInvalidParameter, nil)
-		return
-	}
-
-	if err := ctrl.b.Projects().Update(c, r, int32(id)); err != nil {
+	if err := ctrl.b.Projects().Update(c, r); err != nil {
 		core.WriteResponse(c, err, nil)
 		return
 	}

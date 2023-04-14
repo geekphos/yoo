@@ -5,6 +5,7 @@ import (
 	"phos.cc/yoo/pkg/auth"
 	"phos.cc/yoo/pkg/token"
 	"regexp"
+	"time"
 
 	"github.com/jinzhu/copier"
 
@@ -18,6 +19,7 @@ type UserBiz interface {
 	ChangePassword(ctx context.Context, email string, r *v1.ChangePasswordRequest) error
 	Create(ctx context.Context, r *v1.CreateUserRequest) error
 	Login(ctx context.Context, r *v1.LoginRequest) (*v1.LoginResponse, error)
+	Refresh(ctx context.Context, email string) (*v1.RefreshResponse, error)
 	Profile(ctx context.Context, email string) (*v1.ProfileResponse, error)
 }
 
@@ -57,13 +59,20 @@ func (b *userBiz) Login(ctx context.Context, r *v1.LoginRequest) (*v1.LoginRespo
 	}
 
 	// generate token
-	t, err := token.Sign(user.Email, int(user.ID))
+	accessToken, err := token.Sign(user.Email, int(user.ID), token.AccessToken)
+	if err != nil {
+		return nil, errno.ErrSignToken
+	}
+
+	// generate refresh token
+	refreshToken, err := token.Sign(user.Email, int(user.ID), token.RefreshToken, token.WithExpDuration(7*24*time.Hour))
 	if err != nil {
 		return nil, errno.ErrSignToken
 	}
 
 	return &v1.LoginResponse{
-		Token: t,
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
 	}, nil
 }
 
@@ -94,4 +103,26 @@ func (b *userBiz) Profile(ctx context.Context, email string) (*v1.ProfileRespons
 	_ = copier.Copy(resp, userM)
 
 	return resp, nil
+}
+
+func (b *userBiz) Refresh(ctx context.Context, email string) (*v1.RefreshResponse, error) {
+	userM, err := b.ds.Users().GetByEmail(ctx, email)
+	if err != nil {
+		return nil, errno.ErrUserNotFound
+	}
+
+	accessToken, err := token.Sign(userM.Email, int(userM.ID), token.AccessToken)
+	if err != nil {
+		return nil, errno.ErrSignToken
+	}
+
+	refreshToken, err := token.Sign(userM.Email, int(userM.ID), token.RefreshToken, token.WithExpDuration(30*24*time.Hour))
+	if err != nil {
+		return nil, errno.ErrSignToken
+	}
+
+	return &v1.RefreshResponse{
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+	}, nil
 }

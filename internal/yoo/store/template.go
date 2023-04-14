@@ -9,7 +9,7 @@ import (
 type TemplateStore interface {
 	Create(ctx context.Context, template *model.TemplateM) error
 	Get(ctx context.Context, id int32) (*model.TemplateM, *model.UserM, error)
-	List(ctx context.Context, page, pageSiz int) ([]*model.TemplateM, int64, error)
+	List(ctx context.Context, page, pageSiz int, template *model.TemplateM) ([]*model.TemplateM, int64, error)
 	Update(ctx context.Context, template *model.TemplateM) error
 	Delete(ctx context.Context, id int32) error
 }
@@ -40,13 +40,22 @@ func (t *templates) Get(ctx context.Context, id int32) (*model.TemplateM, *model
 	return templateM, userM, nil
 }
 
-func (t *templates) List(ctx context.Context, page, pageSize int) ([]*model.TemplateM, int64, error) {
+func (t *templates) List(ctx context.Context, page, pageSize int, template *model.TemplateM) ([]*model.TemplateM, int64, error) {
 	var templates []*model.TemplateM
 	var count int64
-	if err := t.db.WithContext(ctx).Model(&model.TemplateM{}).Count(&count).Error; err != nil {
+
+	query := t.db.WithContext(ctx).Model(&model.TemplateM{})
+	if template.Name != "" {
+		query = query.Where("name LIKE ?", "%"+template.Name+"%")
+	}
+	if template.Brief != "" {
+		query = query.Where("brief LIKE ?", "%"+template.Brief+"%")
+	}
+
+	if err := query.Count(&count).Error; err != nil {
 		return nil, 0, err
 	}
-	if err := t.db.WithContext(ctx).Offset((page - 1) * pageSize).Limit(pageSize).Find(&templates).Error; err != nil {
+	if err := query.Offset((page - 1) * pageSize).Limit(pageSize).Find(&templates).Error; err != nil {
 		return nil, 0, err
 	}
 	return templates, count, nil

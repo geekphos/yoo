@@ -47,6 +47,7 @@ func installRouters(g *gin.Engine) error {
 		{
 			userv1.POST("", uc.Create)
 			userv1.POST("/login", uc.Login)
+			userv1.POST("/refresh", uc.Refresh)
 
 			userv1.Use(mw.Auth())
 			userv1.PATCH("/:email/change-password", uc.ChangePassword)
@@ -58,6 +59,7 @@ func installRouters(g *gin.Engine) error {
 		tempaltev1 := v1.Group("/templates")
 		{
 			tempaltev1.GET("/:id", tc.Get)
+			tempaltev1.GET("", tc.List)
 
 			tempaltev1.Use(mw.Auth())
 			tempaltev1.POST("", tc.Create)
@@ -68,6 +70,9 @@ func installRouters(g *gin.Engine) error {
 		projectv1 := v1.Group("/projects")
 		{
 			projectv1.GET("/:id", pc.Get)
+			projectv1.GET("", pc.List)
+			projectv1.GET("/categories", pc.Categories)
+			projectv1.GET("/tags", pc.Tags)
 
 			projectv1.Use(mw.Auth())
 			projectv1.POST("", pc.Create)

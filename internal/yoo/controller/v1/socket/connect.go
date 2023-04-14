@@ -38,8 +38,8 @@ func (ctrl *SocketController) Connect(ctx *gin.Context) {
 		//  授权信息
 		if strings.HasPrefix(string(message), "Bearer") {
 			tokenString := strings.Replace(string(message), "Bearer ", "", 1)
-			email, _, err := token.Parse(tokenString, viper.GetString("jwt-secret"))
-			if err != nil {
+			email, _, tokenType, _, err := token.Parse(tokenString, viper.GetString("jwt-secret"))
+			if err != nil || tokenType != token.AccessToken {
 				log.Errorw("token parse", "err", err)
 				c.WriteMessage(mt, []byte("token parse error"))
 				break

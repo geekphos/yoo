@@ -3,7 +3,6 @@ package project
 import (
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
-	"phos.cc/yoo/internal/pkg/known"
 	"phos.cc/yoo/internal/pkg/log"
 
 	"phos.cc/yoo/internal/pkg/core"
@@ -27,7 +26,7 @@ func (ctrl *ProjectController) Create(c *gin.Context) {
 		return
 	}
 
-	if err := ctrl.b.Projects().Create(c, r, int32(c.GetInt(known.XUserIDKey))); err != nil {
+	if err := ctrl.b.Projects().Create(c, r); err != nil {
 		core.WriteResponse(c, err, nil)
 		return
 	}
