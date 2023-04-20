@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -31,6 +32,8 @@ import (
 	"phos.cc/yoo/internal/yoo/storage"
 	v1 "phos.cc/yoo/pkg/api/yoo/v1"
 )
+
+const CACHE_ROOT = "/.yoo"
 
 type TaskErr struct {
 	Message string
@@ -54,11 +57,11 @@ func (ctrl *ActionController) ExecPlan(c *gin.Context) {
 		return
 	}
 
-	go func(c context.Context, b biz.Biz, pid int32, gid int32, isMicro bool) {
-		execPlan(c, b, pid, gid, isMicro)
-	}(c, ctrl.b, r.PlanID, r.GroupID, r.IsMicro)
+	go func(c context.Context, b biz.Biz, pid int32, gid int32, onlyFailed bool, isMicro bool) {
+		execPlan(c, b, pid, gid, onlyFailed, isMicro)
+	}(c, ctrl.b, r.PlanID, r.GroupID, r.OnlyFailed, r.IsMicro)
 
-	c.JSON(200, gin.H{})
+	c.JSON(200, nil)
 }
 
 func (ctrl *ActionController) Download(c *gin.Context) {
@@ -68,7 +71,7 @@ func (ctrl *ActionController) Download(c *gin.Context) {
 		return
 	}
 	// 返回给前端
-	fileName := fmt.Sprintf("/tmp/.yoo/project-%d/bundles.zip", pid)
+	fileName := fmt.Sprintf("%s/project-%d/bundles.zip", CACHE_ROOT, pid)
 	file, err := os.Open(fileName)
 	if err != nil {
 		core.WriteResponse(c, errno.ErrBadRequest, nil)
@@ -89,75 +92,51 @@ func (ctrl *ActionController) Download(c *gin.Context) {
 
 }
 
-func execPlan(c context.Context, b biz.Biz, pid int32, gid int32, isMicro bool) {
+func execPlan(c context.Context, b biz.Biz, pid int32, gid int32, onlyFailed bool, isMicro bool) {
 	// 开始时间
 	start := time.Now()
+
+	total := int64(math.MaxInt)
+	// 成功数量
+	var succeed uint32
+	// 失败数量
+	var failed uint32
 
 	log.C(c).Infow("start exec plan", "pid", pid, "gid", gid)
 	email := c.Value(known.XEmailKey).(string)
 
-	// 检查本次打包缓存目录 home
-	log.Infow("create home dir", "home", "/tmp/.yoo")
-	// 2. 检查缓存目录
-	home := fmt.Sprintf("/tmp/.yoo/project-%d", pid)
-	if err := mkdirDri(home); err != nil {
-		log.Errorw("create home dir", "err", err)
+	// 检查是否有正在执行的计划
+	p, err := b.Plans().Get(c, pid)
+	if err != nil {
+		log.Errorw("get plan failed", "error", err)
 		return
 	}
 
-	// 删除 bundles 目录
-	bundles := fmt.Sprintf("%s/bundles", home)
-	log.Infow("remove bundles dir", "bundles", bundles)
-	if err := removeDir(bundles); err != nil {
-		log.Errorw("remove bundles dir", "err", err)
+	if p.Status == 2 {
+		log.Errorw("plan is executing")
+		socket_client.WriteJSON(email, gin.H{
+			"event": "plan",
+			"type":  "error",
+			"msg":   "plan is executing, you must wait it finished",
+		})
 		return
 	}
 
-	// 检查 home 下的 bundles 目录是否存在, 不存在则创建
-	log.Infow("create bundles dir", "bundles", bundles)
-	if err := mkdirDri(bundles); err != nil {
-		log.Errorw("create bundles dir", "err", err)
-		return
-	}
-
-	www := fmt.Sprintf("%s/www", bundles)
-	// 清空 www 目录
-	log.Infow("remove www dir", "www", www)
-	if err := removeDir(www); err != nil {
-		log.Errorw("remove www dir", "err", err)
-		return
-	}
-
-	// 检查 bundles 目录下的 www 目录是否存在，不存在则创建
-	log.Infow("create www dir", "www", www)
-	if err := mkdirDri(www); err != nil {
-		log.Errorw("create www dir", "err", err)
-		return
-	}
-
-	// 检查 home 目录下的 repos 目录是否存在，不存在则创建
-	repos := fmt.Sprintf("%s/repos", home)
-	log.Infow("remove repos dir", "repos", repos)
-	if err := removeDir(repos); err != nil {
-		log.Errorw("remove repos dir", "err", err)
-		return
-	}
-
-	// 清空 repos 目录
-	log.Infow("create repos dir", "repos", repos)
-	if err := mkdirDri(repos); err != nil {
-		log.Errorw("create repos dir", "err", err)
+	bundles, www, repos, err := prepareToExec(pid, onlyFailed)
+	if err != nil {
+		log.Errorw("prepare failed, plan can't be executed")
 		return
 	}
 
 	r := &v1.ListTaskQuery{
 		Page:     1,
-		PageSize: 10,
+		PageSize: 20, // 尝试每次打包开 20 个协程
 		PlanID:   int(pid),
 	}
 
-	var total int64
-	total = math.MaxInt
+	if onlyFailed {
+		r.Status = 3
+	}
 
 	var nginxsb strings.Builder
 	var sqlsb strings.Builder
@@ -184,11 +163,31 @@ CREATE TABLE IF NOT EXISTS ` + "`resources`" + `
     ` + "`name`" + `       varchar(255) UNIQUE NOT NULL COMMENT '项目名',
     ` + "`label`" + `      varchar(255)        NOT NULL COMMENT '中文说明，一般为项目 description',
     ` + "`badge`" + `      varchar(255)        NOT NULL COMMENT '应用图标',
-    ` + "`tags`" + `       json COMMENT '分类，标签',
+    ` + "`category`" + `   varchar(255)        NOT NULL COMMENT '应用分类',
+    ` + "`tags`" + `       json                NOT NULL COMMENT '应用的标签列表',
     ` + "`created_at`" + ` timestamp           NOT NULL,
     ` + "`updated_at`" + ` timestamp           NOT NULL
 );
 
+CREATE TABLE ` + "`menus`" + `
+(
+    ` + "`id`" + `          int PRIMARY KEY AUTO_INCREMENT,
+    ` + "`name`" + `        varchar(255) NOT NULL COMMENT '菜单名称',
+    ` + "`icon`" + `        varchar(255) NOT NULL DEFAULT 'default.png' COMMENT '图标',
+    ` + "`menu_type`" + `   tinyint      NOT NULL DEFAULT 1 COMMENT '1 目录, 2 页面, 3 外链',
+    ` + "`resource_id`" + ` int COMMENT '资源 id',
+    ` + "`href`" + `        varchar(255) UNIQUE COMMENT '路径或者外链',
+    ` + "`parent_id`" + `   int COMMENT '父级菜单 id, 若为根目录, 则为空',
+    ` + "`number`" + `      int          NOT NULL COMMENT '菜单顺序编号',
+    ` + "`created_at`" + `  timestamp    NOT NULL,
+    ` + "`updated_at`" + `  timestamp    NOT NULL
+);
+
+ALTER TABLE ` + "`menus`" + `
+    ADD FOREIGN KEY (` + "`resource_id`" + `) REFERENCES ` + "`resources`" + ` (` + "`id`" + `);
+
+ALTER TABLE ` + "`menus`" + `
+    ADD FOREIGN KEY (` + "`parent_id`" + `) REFERENCES ` + "`menus`" + ` (` + "`id`" + `);
 `)
 
 	for int64((r.Page-1)*r.PageSize) < total {
@@ -198,8 +197,9 @@ CREATE TABLE IF NOT EXISTS ` + "`resources`" + `
 		if err != nil {
 			log.Errorw("list task", "err", err)
 			socket_client.WriteJSON(email, gin.H{
-				"event": "error",
-				"data":  err.Error(),
+				"event": "plan",
+				"type":  "error",
+				"msg":   err.Error(),
 			})
 			return
 		}
@@ -215,10 +215,12 @@ CREATE TABLE IF NOT EXISTS ` + "`resources`" + `
 						b.Tasks().Update(c, &v1.UpdateTaskRequest{Status: 3}, task.ID)
 						socket_client.WriteJSON(email, gin.H{
 							"event": "task",
+							"type":  "error",
 							"data": gin.H{
 								"id":     task.ID,
 								"status": 3,
 							},
+							"msg": "ok",
 						})
 						return ctx.Err()
 					default:
@@ -227,21 +229,26 @@ CREATE TABLE IF NOT EXISTS ` + "`resources`" + `
 						// 通过 websocket 发送消息
 						socket_client.WriteJSON(email, gin.H{
 							"event": "task",
+							"type":  "info",
 							"data": gin.H{
 								"id":     task.ID,
 								"status": 2,
 							},
+							"msg": "ok",
 						})
 						location, sql, err := runBuildFlow(task, b, c, repos, www)
 						if err != nil {
 							b.Tasks().Update(c, &v1.UpdateTaskRequest{Status: 3}, task.ID)
 							socket_client.WriteJSON(email, gin.H{
 								"event": "task",
+								"type":  "error",
 								"data": gin.H{
 									"id":     task.ID,
 									"status": 3,
 								},
+								"msg": "ok",
 							})
+							atomic.AddUint32(&failed, 1)
 							return err
 						}
 
@@ -253,24 +260,29 @@ CREATE TABLE IF NOT EXISTS ` + "`resources`" + `
 						b.Tasks().Update(c, &v1.UpdateTaskRequest{Status: 4}, task.ID)
 						socket_client.WriteJSON(email, gin.H{
 							"event": "task",
+							"type":  "success",
 							"data": gin.H{
 								"id":     task.ID,
 								"status": 4,
 							},
+							"msg": "ok",
 						})
+						atomic.AddUint32(&succeed, 1)
 						return nil
 					}
 				})
 			}(task)
 		}
-		if err := g.Wait(); err != nil {
-			log.Errorw("exec plan error", "err", err)
-			socket_client.WriteJSON(email, gin.H{
-				"event":   "project",
-				"message": "exec plan error",
-			})
-			return
-		}
+		// 等待任务执行
+		g.Wait()
+		// if err := g.Wait(); err != nil {
+		// 	log.Errorw("exec plan error", "err", err)
+		// 	socket_client.WriteJSON(email, gin.H{
+		// 		"event":   "project",
+		// 		"message": "exec plan error",
+		// 	})
+		// 	return
+		// }
 	}
 
 	nginxsb.WriteString(`
@@ -312,23 +324,35 @@ version: "3.9"
 services:
   yoo-mysql:
     image: "mysql:latest"
-    restart: always
+    restart: unless-stopped
     environment:
+      LANG: C.UTF-8
       MYSQL_ROOT_PASSWORD: root
     volumes:
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    command: ['--default-authentication-plugin=mysql_native_password', '--character-set-server=utf8mb4', '--collation-server=utf8mb4_general_ci']
 
   yoo-nginx:
     image: "nginx:latest"
-    restart: always
+    restart: unless-stopped
     ports:
       - "8989:80"
     volumes:
       - ./default.conf:/etc/nginx/conf.d/default.conf
-      - ./www:/usr/share/nginx/www
+      - ./www/:/usr/share/nginx/www/
     depends_on:
       - yoo-mysql
 
+  yoo-resource:
+    image: "phostann/yoo-resource:latest"
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./configs/:/app/configs/
+      - ./assets/:/opt/assets
+    depends_on:
+      - yoo-mysql
 `
 	file, err = os.Create(fmt.Sprintf("%s/docker-compose.yml", bundles))
 	if err != nil {
@@ -343,7 +367,7 @@ services:
 	}
 
 	// 创建打包产物压缩文件
-	zipFile := fmt.Sprintf("/tmp/.yoo/project-%d/bundles.zip", pid)
+	zipFile := fmt.Sprintf("%s/project-%d/bundles.zip", CACHE_ROOT, pid)
 	if err := compressDir(bundles, zipFile); err != nil {
 		log.Errorw("Failed to zip the files")
 		return
@@ -358,10 +382,83 @@ services:
 	log.Infow("exec plan success", "time", timeString)
 
 	socket_client.WriteJSON(email, gin.H{
-		"event":   "project",
-		"message": "exec plan success",
-		"elapsed": timeString,
+		"event": "plan",
+		"type":  "success",
+		"data": gin.H{
+			"elapsed": timeString,
+			"total":   total,
+			"succeed": succeed,
+			"failed":  failed,
+		},
+		"msg": "exec plan success",
 	})
+}
+
+func prepareToExec(pid int32, onlyFailed bool) (string, string, string, error) {
+	// 检查本次打包缓存目录 home
+	// 检查缓存目录
+	home := fmt.Sprintf("%s/project-%d", CACHE_ROOT, pid)
+	log.Infow("create home dir", "home", CACHE_ROOT)
+	if err := mkdirDri(home); err != nil {
+		log.Errorw("create home dir", "err", err)
+		return "", "", "", err
+	}
+
+	bundles := fmt.Sprintf("%s/bundles", home)
+
+	// 删除 bundles 目录
+	if !onlyFailed {
+		log.Infow("remove bundles dir", "bundles", bundles)
+		if err := removeDir(bundles); err != nil {
+			log.Errorw("remove bundles dir", "err", err)
+			return "", "", "", err
+		}
+	}
+
+	// 检查 home 下的 bundles 目录是否存在, 不存在则创建
+	log.Infow("create bundles dir", "bundles", bundles)
+	if err := mkdirDri(bundles); err != nil {
+		log.Errorw("create bundles dir", "err", err)
+		return "", "", "", err
+	}
+
+	www := fmt.Sprintf("%s/www", bundles)
+
+	// 删除 www 目录
+	if !onlyFailed {
+		log.Infow("remove www dir", "www", www)
+		if err := removeDir(www); err != nil {
+			log.Errorw("remove www dir", "err", err)
+			return "", "", "", err
+		}
+	}
+
+	// 检查 bundles 目录下的 www 目录是否存在，不存在则创建
+	log.Infow("create www dir", "www", www)
+	if err := mkdirDri(www); err != nil {
+		log.Errorw("create www dir", "err", err)
+		return "", "", "", err
+	}
+
+	repos := fmt.Sprintf("%s/repos", home)
+
+	// 删除 repos 目录
+	if !onlyFailed {
+		log.Infow("remove repos dir", "repos", repos)
+		if err := removeDir(repos); err != nil {
+			log.Errorw("remove repos dir", "err", err)
+			return "", "", "", err
+		}
+	}
+
+	// 检查 home 目录下的 repos 目录是否存在，不存在则创建
+	log.Infow("create repos dir", "repos", repos)
+	if err := mkdirDri(repos); err != nil {
+		log.Errorw("create repos dir", "err", err)
+		return "", "", "", err
+	}
+
+	return bundles, www, repos, nil
 }
 
 func runBuildFlow(task *v1.GetTaskResponse, b biz.Biz, c context.Context, repos string, www string) (string, string, error) {
@@ -385,6 +482,12 @@ func runBuildFlow(task *v1.GetTaskResponse, b biz.Biz, c context.Context, repos 
 		return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
 	}
 
+	defer func(dir string) {
+		go func(dir string) {
+			_ = removeDir(dir)
+		}(dir)
+	}(dir)
+
 	// 5. 克隆项目到本地
 	var repo string
 	if p.SSHURL != "" {
@@ -397,21 +500,21 @@ func runBuildFlow(task *v1.GetTaskResponse, b biz.Biz, c context.Context, repos 
 		log.Errorw("clone project", "err", err, "repo", repo, "output", string(output))
 		return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
 	}
-	log.Infow("clone project success", "output", string(output))
+	log.Infow("clone project success")
 
 	// 6. 安装项目依赖
 	if output, err = installDeps(dir); err != nil {
 		log.Errorw("install dependencies", "err", err, "output", string(output))
 		return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
 	}
-	log.Infow("install dependencies success", "output", string(output))
+	log.Infow("install dependencies success")
 
 	// 7. 执行打包命令
 	if output, err = buildProject(dir, p.BuildCmd); err != nil {
 		log.Errorw("build project", "err", err, "output", string(output))
 		return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
 	}
-	log.Infow("build success", "output", string(output))
+	log.Infow("build success")
 
 	// 拷贝打包出的文件至 www 下
 	src := fmt.Sprintf("%s/%s", dir, p.Dist)
@@ -430,7 +533,7 @@ func runBuildFlow(task *v1.GetTaskResponse, b biz.Biz, c context.Context, repos 
     }
 `, p.Name, p.Name, p.Name)
 
-	sql := fmt.Sprintf("\nINSERT INTO `resources` (`name`, `label`, `badge`, `created_at`, `updated_at`) VALUES ('%s', '%s', '%s', NOW(), NOW())", p.Name, p.Description, "default.jpeg")
+	sql := fmt.Sprintf("\nINSERT INTO `resources` (`name`, `label`, `badge`, `category`, `tags`, `created_at`, `updated_at`) VALUES ('%s', '%s', '%s', '%s', '%s', NOW(), NOW());", p.Name, p.Description, "default.png", "教育", `["学生", "教师"]`)
 
 	return location, sql, nil
 }
@@ -517,6 +620,16 @@ func removeFile(path string) error {
 }
 
 func compressDir(src string, dst string) error {
+	// 检查文件是否存在
+	_, err := os.Stat(dst)
+
+	// 存在则先删除
+	if os.IsExist(err) {
+		if err := os.Remove(dst); err != nil {
+			return err
+		}
+	}
+
 	zipFile, err := os.Create(dst)
 	if err != nil {
 		return err
@@ -617,11 +730,7 @@ func cloneRepo(repo string, dir string) (string, error) {
 }
 
 func installDeps(dir string) (string, error) {
-	// remove yarn.lock
-	//if err := removeFile(filepath.Join(dir, "yarn.lock")); err != nil {
-	//	return "", err
-	//}
-	cmd := exec.Command("yarn")
+	cmd := exec.Command("yarn", "install")
 	cmd.Dir = dir
 	return execCommand(cmd)
 }
@@ -723,6 +832,12 @@ func uploadFiles(ctx context.Context, bucketName, objectPrefix, filePath string)
 	//}
 	//
 	//return nil
+}
+
+func cleanYarnCache() {
+	cmd := exec.Command("yarn", "cache", "clean")
+	log.Infow("exec command", "cmd", cmd.String())
+	cmd.Output()
 }
 
 func execCommand(cmd *exec.Cmd) (string, error) {

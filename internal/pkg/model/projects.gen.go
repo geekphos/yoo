@@ -17,9 +17,8 @@ type ProjectM struct {
 	ID          int32          `gorm:"column:id;primaryKey;autoIncrement:true" json:"id"`
 	UserID      int32          `gorm:"column:user_id;not null" json:"user_id"`
 	Name        string         `gorm:"column:name;not null" json:"name"`
-	Badge       string         `gorm:"column:badge;default:default.png" json:"badge"`
-	Category    string         `gorm:"column:category;not null" json:"category"`
-	Tags        datatypes.JSON `gorm:"column:tags" json:"tags"`
+	Category    string         `gorm:"column:category" json:"category"`      // 项目分类
+	Tags        datatypes.JSON `gorm:"column:tags" json:"tags"`              // 项目标签
 	SSHURL      string         `gorm:"column:ssh_url" json:"ssh_url"`        // ssh 地址
 	HTTPURL     string         `gorm:"column:http_url" json:"http_url"`      // http 地址
 	WebURL      string         `gorm:"column:web_url" json:"web_url"`        // 仓库主页

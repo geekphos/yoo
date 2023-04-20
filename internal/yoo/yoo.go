@@ -110,9 +110,9 @@ func run() error {
 		return err
 	}
 
-	httpsrv := &http.Server{Addr: ":8080", Handler: r}
+	httpsrv := &http.Server{Addr: ":8991", Handler: r}
 
-	log.Infow("Start to listening the incoming requests on http address", "addr", ":8080")
+	log.Infow("Start to listening the incoming requests on http address", "addr", ":8991")
 
 	go func() {
 

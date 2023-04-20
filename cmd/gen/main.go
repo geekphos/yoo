@@ -11,7 +11,7 @@ import (
 
 // Dynamic SQL
 
-const dsn = "root:root@tcp(192.168.31.120:3306)/yoo?charset=utf8mb4&parseTime=True&loc=Local"
+const dsn = "root:yotoo123qwe@tcp(192.168.31.120:3306)/yoo?charset=utf8mb4&parseTime=True&loc=Local"
 
 func main() {
 	g := gen.NewGenerator(gen.Config{
