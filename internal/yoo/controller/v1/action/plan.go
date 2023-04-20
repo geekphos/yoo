@@ -149,6 +149,23 @@ server {
     add_header Access-Control-Allow-Origin *;
 
     #access_log  /var/log/nginx/host.access.log  main;
+
+	location /api/ {
+		proxy_pass http://192.168.31.72:8080/;
+	}
+    location /assets/ {
+    	proxy_pass http://192.168.31.72:84/;
+    }
+	location /api/yoo/ {
+    	proxy_pass http://yoo-resource:8080/;
+    }
+	location /ws/ {
+    	proxy_pass http://192.168.31.72:8080/;
+    	proxy_http_version 1.1;
+    	proxy_set_header Upgrade $http_upgrade;
+    	proxy_set_header Connection "Upgrade";
+    }
+
 `)
 	sqlsb.WriteString(`
 # 创建数据库
