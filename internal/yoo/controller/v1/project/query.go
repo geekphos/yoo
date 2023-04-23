@@ -13,7 +13,7 @@ import (
 
 func (ctrl *ProjectController) Get(c *gin.Context) {
 
-	log.C(c).Infow("GetByEmail project function called")
+	log.C(c).Infow("GetByID project function called")
 
 	// get id from the url
 	var id int

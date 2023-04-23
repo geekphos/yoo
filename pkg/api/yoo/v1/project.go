@@ -15,6 +15,7 @@ type CreateProjectRequest struct {
 	WebURL      string   `json:"web_url" binding:"required"`
 	BuildCmd    string   `json:"build_cmd" binding:"required"`
 	Dist        string   `json:"dist" binding:"required"`
+	PID         int      `json:"pid" binding:"required"`
 	Description string   `json:"description" binding:"required"`
 }
 
@@ -31,6 +32,7 @@ type GetProjectResponse struct {
 	WebURL      string         `json:"web_url"`
 	BuildCmd    string         `json:"build_cmd"`
 	Dist        string         `json:"dist"`
+	PID         int            `json:"pid"`
 	Description string         `json:"description"`
 	CreatedAt   time.Time      `json:"created_at"`
 	UpdatedAt   time.Time      `json:"updated_at"`
@@ -58,6 +60,7 @@ type ListProjectResponse struct {
 	WebURL      string         `json:"web_url"`
 	BuildCmd    string         `json:"build_cmd"`
 	Dist        string         `json:"dist"`
+	PID         int            `json:"pid"`
 	Description string         `json:"description"`
 	CreatedAt   time.Time      `json:"created_at"`
 	UpdatedAt   time.Time      `json:"updated_at"`

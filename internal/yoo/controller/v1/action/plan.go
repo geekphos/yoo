@@ -137,7 +137,7 @@ func execPlan(c context.Context, b biz.Biz, pid int32, gid int32, onlyFailed boo
 		return
 	}
 
-	r := &v1.ListTaskQuery{
+	r := &v1.ListTaskRequest{
 		Page:     1,
 		PageSize: 5, // 打包速度基本和磁盘性能有关系，故此只开启 5 个协程
 		PlanID:   int(pid),

@@ -16,6 +16,7 @@ type TemplateBiz interface {
 	Create(ctx context.Context, r *v1.CreateTemplateRequest, id int32) error
 	Get(ctx context.Context, id int32) (*v1.GetTemplateResponse, error)
 	List(ctx context.Context, r *v1.ListTemplateRequest) ([]*v1.ListTemplateResponse, int64, error)
+	Update(ctx context.Context, r *v1.UpdateTemplateRequest) error
 }
 
 type templateBiz struct {
@@ -45,9 +46,14 @@ func (b *templateBiz) Create(ctx context.Context, r *v1.CreateTemplateRequest, i
 }
 
 func (b *templateBiz) Get(ctx context.Context, id int32) (*v1.GetTemplateResponse, error) {
-	template, user, err := b.ds.Templates().Get(ctx, id)
+	template, err := b.ds.Templates().Get(ctx, id)
 	if err != nil {
 		return nil, errno.ErrTemplateNotFound
+	}
+
+	user, err := b.ds.Users().Get(ctx, template.UserID)
+	if err != nil {
+		return nil, errno.ErrUserNotFound
 	}
 
 	var resp = &v1.GetTemplateResponse{}
@@ -83,4 +89,13 @@ func (b *templateBiz) List(ctx context.Context, r *v1.ListTemplateRequest) ([]*v
 	}
 
 	return resp, count, nil
+}
+
+func (b *templateBiz) Update(ctx context.Context, r *v1.UpdateTemplateRequest) error {
+	templateM, err := b.ds.Templates().Get(ctx, int32(r.ID))
+	if err != nil {
+		return err
+	}
+	_ = copier.CopyWithOption(templateM, r, copier.Option{IgnoreEmpty: true})
+	return b.ds.Templates().Update(ctx, templateM)
 }

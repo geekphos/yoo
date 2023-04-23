@@ -41,7 +41,7 @@ func (p *projects) Get(ctx context.Context, id int32) (*model.ProjectM, error) {
 }
 
 func (p *projects) Update(ctx context.Context, project *model.ProjectM) error {
-	return p.db.WithContext(ctx).Updates(project).Error
+	return p.db.WithContext(ctx).Save(project).Error
 }
 
 func (p *projects) List(ctx context.Context, page, pageSize int, project *model.ProjectM) ([]*model.ProjectM, int64, error) {
@@ -83,17 +83,17 @@ func (p *projects) List(ctx context.Context, page, pageSize int, project *model.
 	return projectMs, count, nil
 }
 
-func (c *projects) Categories(ctx context.Context) ([]string, error) {
+func (p *projects) Categories(ctx context.Context) ([]string, error) {
 	var res []string
-	if result := c.db.WithContext(ctx).Table("projects").Select([]string{"category"}).Scan(&res); result.Error != nil {
+	if result := p.db.WithContext(ctx).Table("projects").Select([]string{"category"}).Scan(&res); result.Error != nil {
 		return nil, result.Error
 	}
 	return lo.Union(res), nil
 }
 
-func (c *projects) Tags(ctx context.Context) ([]string, error) {
+func (p *projects) Tags(ctx context.Context) ([]string, error) {
 	var tags []datatypes.JSON
-	if result := c.db.WithContext(ctx).Table("projects").Select([]string{"tags"}).Scan(&tags); result.Error != nil {
+	if result := p.db.WithContext(ctx).Table("projects").Select([]string{"tags"}).Scan(&tags); result.Error != nil {
 		return nil, result.Error
 	}
 	var res [][]string
@@ -105,5 +105,4 @@ func (c *projects) Tags(ctx context.Context) ([]string, error) {
 	})
 
 	return lo.Union(lo.Flatten(res)), nil
-
 }

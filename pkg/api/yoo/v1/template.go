@@ -36,3 +36,10 @@ type ListTemplateResponse struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
+
+type UpdateTemplateRequest struct {
+	ID    int     `json:"id" uri:"id" binding:"required"`
+	Name  *string `json:"name"`
+	Repo  *string `json:"repo"`
+	Brief *string `json:"brief"`
+}

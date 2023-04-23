@@ -77,7 +77,7 @@ func (b *projectBiz) Update(ctx context.Context, r *v1.UpdateProjectRequest) err
 		return errno.ErrProjectNotFound
 	}
 
-	_ = copier.Copy(projectM, r)
+	_ = copier.CopyWithOption(projectM, r, copier.Option{IgnoreEmpty: true})
 	projectM.ID = r.ID
 
 	if err := b.ds.Projects().Update(ctx, projectM); err != nil {

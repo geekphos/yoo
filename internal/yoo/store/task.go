@@ -13,6 +13,7 @@ type TaskStore interface {
 	Get(ctx context.Context, id int32) (*model.TaskM, error)
 	Update(ctx context.Context, task *model.TaskM) error
 	List(ctx context.Context, page, pageSize int, task *model.TaskM) ([]*model.TaskM, int64, error)
+	All(ctx context.Context, task *model.TaskM) ([]*model.TaskM, error)
 }
 
 type tasks struct {
@@ -53,4 +54,12 @@ func (p *tasks) List(ctx context.Context, page, pageSize int, task *model.TaskM)
 		return nil, 0, err
 	}
 	return taskMs, count, nil
+}
+
+func (p *tasks) All(ctx context.Context, task *model.TaskM) ([]*model.TaskM, error) {
+	var taskMs []*model.TaskM
+	if err := p.db.WithContext(ctx).Where(task).Find(&taskMs).Error; err != nil {
+		return nil, err
+	}
+	return taskMs, nil
 }

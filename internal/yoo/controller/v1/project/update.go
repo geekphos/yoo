@@ -11,8 +11,8 @@ import (
 )
 
 func (ctrl *ProjectController) Update(c *gin.Context) {
-	var r = &v1.UpdateProjectRequest{}
-	if err := c.ShouldBindJSON(r); err != nil {
+	var r v1.UpdateProjectRequest
+	if err := c.ShouldBindJSON(&r); err != nil {
 		if errs, ok := err.(validator.ValidationErrors); ok {
 			core.WriteResponse(c, errno.ErrInvalidParameter.SetMessage(veldt.Translate(errs)), nil)
 		} else {
@@ -21,7 +21,7 @@ func (ctrl *ProjectController) Update(c *gin.Context) {
 		return
 	}
 
-	if err := ctrl.b.Projects().Update(c, r); err != nil {
+	if err := ctrl.b.Projects().Update(c, &r); err != nil {
 		core.WriteResponse(c, err, nil)
 		return
 	}

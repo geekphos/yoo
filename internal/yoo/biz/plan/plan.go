@@ -13,6 +13,7 @@ import (
 type PlanBiz interface {
 	Create(ctx context.Context, r *v1.CreatePlanRequest, id int32) error
 	Get(ctx context.Context, id int32) (*v1.GetPlanResponse, error)
+	List(ctx context.Context, r *v1.ListPlanRequest) ([]*v1.ListPlanResponse, int64, error)
 	Update(ctx context.Context, r *v1.UpdatePlanRequest, id int32) error
 }
 
@@ -57,6 +58,28 @@ func (b *planBiz) Get(ctx context.Context, id int32) (*v1.GetPlanResponse, error
 	resp.Username = userM.Nickname
 
 	return resp, nil
+}
+
+func (b *planBiz) List(ctx context.Context, r *v1.ListPlanRequest) ([]*v1.ListPlanResponse, int64, error) {
+	planMs, total, err := b.ds.Plans().List(ctx, r)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	var resp = make([]*v1.ListPlanResponse, 0, len(planMs))
+	for _, planM := range planMs {
+		userM, err := b.ds.Users().Get(ctx, planM.UserID)
+		if err != nil {
+			return nil, 0, errno.ErrUserNotFound
+		}
+
+		var respItem = &v1.ListPlanResponse{}
+		_ = copier.Copy(respItem, planM)
+		respItem.Username = userM.Nickname
+		resp = append(resp, respItem)
+	}
+
+	return resp, total, nil
 }
 
 func (b *planBiz) Update(ctx context.Context, r *v1.UpdatePlanRequest, id int32) error {

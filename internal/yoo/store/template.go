@@ -8,7 +8,7 @@ import (
 
 type TemplateStore interface {
 	Create(ctx context.Context, template *model.TemplateM) error
-	Get(ctx context.Context, id int32) (*model.TemplateM, *model.UserM, error)
+	Get(ctx context.Context, id int32) (*model.TemplateM, error)
 	List(ctx context.Context, page, pageSiz int, template *model.TemplateM) ([]*model.TemplateM, int64, error)
 	Update(ctx context.Context, template *model.TemplateM) error
 	Delete(ctx context.Context, id int32) error
@@ -28,16 +28,10 @@ func (t *templates) Create(ctx context.Context, template *model.TemplateM) error
 	return t.db.WithContext(ctx).Create(template).Error
 }
 
-func (t *templates) Get(ctx context.Context, id int32) (*model.TemplateM, *model.UserM, error) {
+func (t *templates) Get(ctx context.Context, id int32) (*model.TemplateM, error) {
 	var templateM = &model.TemplateM{}
-	if err := t.db.WithContext(ctx).First(templateM, id).Error; err != nil {
-		return nil, nil, err
-	}
-	var userM = &model.UserM{}
-	if err := t.db.WithContext(ctx).First(userM, templateM.UserID).Error; err != nil {
-		return nil, nil, err
-	}
-	return templateM, userM, nil
+	err := t.db.WithContext(ctx).First(templateM, id).Error
+	return templateM, err
 }
 
 func (t *templates) List(ctx context.Context, page, pageSize int, template *model.TemplateM) ([]*model.TemplateM, int64, error) {
@@ -62,7 +56,7 @@ func (t *templates) List(ctx context.Context, page, pageSize int, template *mode
 }
 
 func (t *templates) Update(ctx context.Context, template *model.TemplateM) error {
-	return t.db.WithContext(ctx).Updates(template).Error
+	return t.db.WithContext(ctx).Save(template).Error
 }
 
 func (t *templates) Delete(ctx context.Context, id int32) error {

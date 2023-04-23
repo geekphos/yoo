@@ -15,7 +15,8 @@ type TaskBiz interface {
 	Create(ctx context.Context, r *v1.CreateTaskRequest) error
 	Update(ctx context.Context, r *v1.UpdateTaskRequest, id int32) error
 	Get(ctx context.Context, id int32) (*v1.GetTaskResponse, error)
-	List(ctx context.Context, r *v1.ListTaskQuery) ([]*v1.GetTaskResponse, int64, error)
+	List(ctx context.Context, r *v1.ListTaskRequest) ([]*v1.ListTaskResponse, int64, error)
+	All(ctx context.Context, r *v1.AllTaskRequest) ([]*v1.AllTaskResponse, error)
 }
 
 type taskBiz struct {
@@ -66,8 +67,8 @@ func (b *taskBiz) Get(ctx context.Context, id int32) (*v1.GetTaskResponse, error
 	return resp, nil
 }
 
-func (b *taskBiz) List(ctx context.Context, r *v1.ListTaskQuery) ([]*v1.GetTaskResponse, int64, error) {
-	var resp []*v1.GetTaskResponse
+func (b *taskBiz) List(ctx context.Context, r *v1.ListTaskRequest) ([]*v1.ListTaskResponse, int64, error) {
+	var resp []*v1.ListTaskResponse
 
 	taskM := &model.TaskM{}
 	_ = copier.Copy(taskM, r)
@@ -78,10 +79,30 @@ func (b *taskBiz) List(ctx context.Context, r *v1.ListTaskQuery) ([]*v1.GetTaskR
 	}
 
 	for _, taskM := range taskMs {
-		var task = &v1.GetTaskResponse{}
+		var task = &v1.ListTaskResponse{}
 		_ = copier.Copy(task, taskM)
 		resp = append(resp, task)
 	}
 
 	return resp, total, nil
+}
+
+func (b *taskBiz) All(ctx context.Context, r *v1.AllTaskRequest) ([]*v1.AllTaskResponse, error) {
+	var resp []*v1.AllTaskResponse
+
+	taskM := &model.TaskM{}
+	_ = copier.Copy(taskM, r)
+
+	taskMs, err := b.ds.Tasks().All(ctx, taskM)
+	if err != nil {
+		return nil, errno.InternalServerError
+	}
+
+	for _, taskM := range taskMs {
+		var task = &v1.AllTaskResponse{}
+		_ = copier.Copy(task, taskM)
+		resp = append(resp, task)
+	}
+
+	return resp, nil
 }

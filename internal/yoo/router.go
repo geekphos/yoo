@@ -88,6 +88,7 @@ func installRouters(g *gin.Engine) error {
 			planv1.Use(mw.Auth())
 			planv1.POST("", plc.Create)
 			planv1.PATCH("/:id", plc.Update)
+			planv1.GET("", plc.List)
 		}
 
 		// 创建 tasks 路由分组
@@ -98,7 +99,8 @@ func installRouters(g *gin.Engine) error {
 
 			taskv1.Use(mw.Auth())
 			taskv1.POST("", tsc.Create)
-			taskv1.PATCH("/:id", tsc.Update)
+			taskv1.GET("/list", tsc.List)
+			taskv1.GET("/all", tsc.All)
 		}
 
 		// 创建 actions 路由分组
