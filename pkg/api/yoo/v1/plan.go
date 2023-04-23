@@ -17,5 +17,6 @@ type GetPlanResponse struct {
 }
 
 type UpdatePlanRequest struct {
-	Name string `json:"name"`
+	Name   *string `json:"name"`
+	Status int     `json:"status"`
 }

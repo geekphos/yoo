@@ -46,7 +46,7 @@ func (p *tasks) List(ctx context.Context, page, pageSize int, task *model.TaskM)
 		taskMs []*model.TaskM
 		count  int64
 	)
-	if err := p.db.WithContext(ctx).Model(task).Count(&count).Error; err != nil {
+	if err := p.db.WithContext(ctx).Model(&model.TaskM{}).Where(task).Count(&count).Error; err != nil {
 		return nil, 0, err
 	}
 	if err := p.db.WithContext(ctx).Limit(pageSize).Offset((page - 1) * pageSize).Find(&taskMs).Error; err != nil {

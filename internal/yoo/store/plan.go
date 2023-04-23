@@ -35,5 +35,5 @@ func (p *plans) Get(ctx context.Context, id int32) (*model.PlanM, error) {
 }
 
 func (p *plans) Update(ctx context.Context, plan *model.PlanM) error {
-	return p.db.WithContext(ctx).Updates(plan).Error
+	return p.db.WithContext(ctx).Save(plan).Error
 }

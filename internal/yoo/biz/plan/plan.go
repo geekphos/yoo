@@ -61,8 +61,12 @@ func (b *planBiz) Get(ctx context.Context, id int32) (*v1.GetPlanResponse, error
 
 func (b *planBiz) Update(ctx context.Context, r *v1.UpdatePlanRequest, id int32) error {
 
-	var planM = &model.PlanM{}
-	_ = copier.Copy(planM, r)
+	planM, err := b.ds.Plans().Get(ctx, id)
+	if err != nil {
+		return errno.ErrPlanNotFound
+	}
+
+	_ = copier.CopyWithOption(planM, r, copier.Option{IgnoreEmpty: true})
 	planM.ID = id
 
 	if err := b.ds.Plans().Update(ctx, planM); err != nil {

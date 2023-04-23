@@ -26,6 +26,8 @@ func main() {
 	g.UseDB(db)
 
 	g.GenerateModelAs("users", "UserM")
+	g.GenerateModelAs("plans", "PlanM")
 	g.GenerateModelAs("projects", "ProjectM", gen.FieldType("tags", "datatypes.JSON"))
+
 	g.Execute()
 }

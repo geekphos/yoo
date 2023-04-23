@@ -33,7 +33,8 @@ import (
 	v1 "phos.cc/yoo/pkg/api/yoo/v1"
 )
 
-const CACHE_ROOT = "/.yoo"
+// const CACHE_ROOT = "/.yoo"
+const CACHE_ROOT = "/tmp/.yoo"
 
 type TaskErr struct {
 	Message string
@@ -120,6 +121,14 @@ func execPlan(c context.Context, b biz.Biz, pid int32, gid int32, onlyFailed boo
 			"msg":   "plan is executing, you must wait it finished",
 		})
 		return
+	} else {
+		// 更新计划状态
+		if err := b.Plans().Update(c, &v1.UpdatePlanRequest{
+			Status: 2,
+		}, pid); err != nil {
+			log.Errorw("update plan status failed", "error", err)
+			return
+		}
 	}
 
 	bundles, www, repos, err := prepareToExec(pid, onlyFailed)
@@ -130,12 +139,8 @@ func execPlan(c context.Context, b biz.Biz, pid int32, gid int32, onlyFailed boo
 
 	r := &v1.ListTaskQuery{
 		Page:     1,
-		PageSize: 20, // 尝试每次打包开 20 个协程
+		PageSize: 5, // 打包速度基本和磁盘性能有关系，故此只开启 5 个协程
 		PlanID:   int(pid),
-	}
-
-	if onlyFailed {
-		r.Status = 3
 	}
 
 	var nginxsb strings.Builder
@@ -153,19 +158,21 @@ server {
 	location /api/ {
 		proxy_pass http://192.168.31.72:8080/;
 	}
+
     location /assets/ {
     	proxy_pass http://192.168.31.72:84/;
     }
+
 	location /api/yoo/ {
     	proxy_pass http://yoo-resource:8080/;
     }
+
 	location /ws/ {
     	proxy_pass http://192.168.31.72:8080/;
     	proxy_http_version 1.1;
     	proxy_set_header Upgrade $http_upgrade;
     	proxy_set_header Connection "Upgrade";
     }
-
 `)
 	sqlsb.WriteString(`
 # 创建数据库
@@ -223,7 +230,6 @@ ALTER TABLE ` + "`menus`" + `
 		r.Page += 1
 		g, ctx := errgroup.WithContext(context.Background())
 		for _, task := range list {
-			log.Infow("query task: ", "page", r.Page-1, "task", task)
 			func(task *v1.GetTaskResponse) {
 				g.Go(func() error {
 					select {
@@ -253,7 +259,7 @@ ALTER TABLE ` + "`menus`" + `
 							},
 							"msg": "ok",
 						})
-						location, sql, err := runBuildFlow(task, b, c, repos, www)
+						location, sql, err := runBuildFlow(task, b, c, repos, www, onlyFailed)
 						if err != nil {
 							b.Tasks().Update(c, &v1.UpdateTaskRequest{Status: 3}, task.ID)
 							socket_client.WriteJSON(email, gin.H{
@@ -291,15 +297,7 @@ ALTER TABLE ` + "`menus`" + `
 			}(task)
 		}
 		// 等待任务执行
-		g.Wait()
-		// if err := g.Wait(); err != nil {
-		// 	log.Errorw("exec plan error", "err", err)
-		// 	socket_client.WriteJSON(email, gin.H{
-		// 		"event":   "project",
-		// 		"message": "exec plan error",
-		// 	})
-		// 	return
-		// }
+		_ = g.Wait()
 	}
 
 	nginxsb.WriteString(`
@@ -310,6 +308,8 @@ ALTER TABLE ` + "`menus`" + `
     }
 }
 `)
+
+	sqlsb.WriteString("\nINSERT INTO menus (`name`, `menu_type`, `href`, `number`, `created_at`, `updated_at`) values ('前端资源', 1, '/resource', 1, NOW(), NOW());\nINSERT INTO menus (`name`, `menu_type`, `href`, `number`, `resource_id`, `parent_id`, `created_at`, `updated_at`) values ('资源管理', 2, '/manage', 1, (select id from resources where resources.name = 'yoo-resource'),(select last_insert_id()), NOW(), NOW())")
 
 	// 在 bundles 目录下生成 default.conf
 	file, err := os.Create(fmt.Sprintf("%s/default.conf", bundles))
@@ -396,18 +396,33 @@ services:
 
 	timeString := formatDuration(elapsed)
 
-	log.Infow("exec plan success", "time", timeString)
+	log.Infow("exec plan finished", "total", total, "succeed", succeed, "failed", failed, "time", timeString)
+
+	if failed == 0 {
+		b.Plans().Update(c, &v1.UpdatePlanRequest{Status: 4}, pid)
+	} else {
+
+		b.Plans().Update(c, &v1.UpdatePlanRequest{Status: 3}, pid)
+	}
+
+	var tp string
+
+	if failed == 0 {
+		tp = "success"
+	} else {
+		tp = "info"
+	}
 
 	socket_client.WriteJSON(email, gin.H{
 		"event": "plan",
-		"type":  "success",
+		"type":  tp,
 		"data": gin.H{
 			"elapsed": timeString,
 			"total":   total,
 			"succeed": succeed,
 			"failed":  failed,
 		},
-		"msg": "exec plan success",
+		"msg": "exec plan finished",
 	})
 }
 
@@ -478,7 +493,7 @@ func prepareToExec(pid int32, onlyFailed bool) (string, string, string, error) {
 	return bundles, www, repos, nil
 }
 
-func runBuildFlow(task *v1.GetTaskResponse, b biz.Biz, c context.Context, repos string, www string) (string, string, error) {
+func runBuildFlow(task *v1.GetTaskResponse, b biz.Biz, c context.Context, repos string, www string, onlyFailed bool) (string, string, error) {
 	log.Infow("query project", "id", task.ProjectID)
 	// 1. 查询 project
 	p, err := b.Projects().Get(c, task.ProjectID)
@@ -486,61 +501,64 @@ func runBuildFlow(task *v1.GetTaskResponse, b biz.Biz, c context.Context, repos 
 		return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
 	}
 
-	dir := fmt.Sprintf("%s/%s", repos, p.Name)
-	log.Infow("check project dir", "dir", dir)
+	// 如果只打包上次失败的项目，则只需要写配置文件即可
+	if !onlyFailed || task.Status == 3 {
+		dir := fmt.Sprintf("%s/%s", repos, p.Name)
+		log.Infow("check project dir", "dir", dir)
 
-	// 3. 删除项目目录
-	if err := removeDir(dir); err != nil {
-		return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
-	}
+		// 3. 删除项目目录
+		if err := removeDir(dir); err != nil {
+			return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
+		}
 
-	// 4. 创建项目目录
-	if err := mkdirDri(dir); err != nil {
-		return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
-	}
+		// 4. 创建项目目录
+		if err := mkdirDri(dir); err != nil {
+			return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
+		}
 
-	defer func(dir string) {
-		go func(dir string) {
-			_ = removeDir(dir)
+		defer func(dir string) {
+			go func(dir string) {
+				_ = removeDir(dir)
+			}(dir)
 		}(dir)
-	}(dir)
 
-	// 5. 克隆项目到本地
-	var repo string
-	if p.SSHURL != "" {
-		repo = p.SSHURL
-	} else {
-		repo = p.SSHURL
-	}
-	var output string
-	if output, err = cloneRepo(repo, dir); err != nil {
-		log.Errorw("clone project", "err", err, "repo", repo, "output", string(output))
-		return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
-	}
-	log.Infow("clone project success")
+		// 5. 克隆项目到本地
+		var repo string
+		if p.SSHURL != "" {
+			repo = p.SSHURL
+		} else {
+			repo = p.SSHURL
+		}
+		var output string
+		if output, err = cloneRepo(repo, dir); err != nil {
+			log.Errorw("clone project", "err", err, "repo", repo, "output", string(output))
+			return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
+		}
+		log.Infow("clone project success")
 
-	// 6. 安装项目依赖
-	if output, err = installDeps(dir); err != nil {
-		log.Errorw("install dependencies", "err", err, "output", string(output))
-		return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
-	}
-	log.Infow("install dependencies success")
+		// 6. 安装项目依赖
+		if output, err = installDeps(dir); err != nil {
+			log.Errorw("install dependencies", "err", err, "output", string(output))
+			return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
+		}
+		log.Infow("install dependencies success")
 
-	// 7. 执行打包命令
-	if output, err = buildProject(dir, p.BuildCmd); err != nil {
-		log.Errorw("build project", "err", err, "output", string(output))
-		return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
-	}
-	log.Infow("build success")
+		// 7. 执行打包命令
+		if output, err = buildProject(dir, p.BuildCmd); err != nil {
+			log.Errorw("build project", "err", err, "output", string(output))
+			return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
+		}
+		log.Infow("build success")
 
-	// 拷贝打包出的文件至 www 下
-	src := fmt.Sprintf("%s/%s", dir, p.Dist)
-	dst := fmt.Sprintf("%s/%s", www, p.Name)
-	if err := copyDir(src, dst); err != nil {
-		log.Errorw("copy dir", "err", err)
-		return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
+		// 拷贝打包出的文件至 www 下
+		src := fmt.Sprintf("%s/%s", dir, p.Dist)
+		dst := fmt.Sprintf("%s/%s", www, p.Name)
+		if err := copyDir(src, dst); err != nil {
+			log.Errorw("copy dir", "err", err)
+			return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
+		}
+		log.Infow("copy dir success", "src", src, "dst", dst)
 	}
-	log.Infow("copy dir success", "src", src, "dst", dst)
 
 	location := fmt.Sprintf(`
 	location /%s/{
