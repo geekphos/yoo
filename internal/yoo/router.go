@@ -63,6 +63,7 @@ func installRouters(g *gin.Engine) error {
 
 			tempaltev1.Use(mw.Auth())
 			tempaltev1.POST("", tc.Create)
+			tempaltev1.DELETE("/:id", tc.Delete)
 		}
 
 		// 创建 projects 路由分组
@@ -77,6 +78,7 @@ func installRouters(g *gin.Engine) error {
 			projectv1.Use(mw.Auth())
 			projectv1.POST("", pc.Create)
 			projectv1.PATCH("/:id", pc.Update)
+			projectv1.DELETE("/:id", pc.Delete)
 		}
 
 		// 创建 plans 路由分组
@@ -84,11 +86,12 @@ func installRouters(g *gin.Engine) error {
 		planv1 := v1.Group("/plans")
 		{
 			planv1.GET("/:id", plc.Get)
+			planv1.GET("", plc.List)
 
 			planv1.Use(mw.Auth())
 			planv1.POST("", plc.Create)
 			planv1.PATCH("/:id", plc.Update)
-			planv1.GET("", plc.List)
+			planv1.DELETE("/:id", plc.Delete)
 		}
 
 		// 创建 tasks 路由分组
@@ -96,11 +99,12 @@ func installRouters(g *gin.Engine) error {
 		taskv1 := v1.Group("/tasks")
 		{
 			taskv1.GET("/:id", tsc.Get)
+			taskv1.GET("/list", tsc.List)
+			taskv1.GET("/all", tsc.All)
 
 			taskv1.Use(mw.Auth())
 			taskv1.POST("", tsc.Create)
-			taskv1.GET("/list", tsc.List)
-			taskv1.GET("/all", tsc.All)
+			taskv1.DELETE("/:id", tsc.Delete)
 		}
 
 		// 创建 actions 路由分组

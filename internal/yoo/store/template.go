@@ -10,6 +10,7 @@ type TemplateStore interface {
 	Create(ctx context.Context, template *model.TemplateM) error
 	Get(ctx context.Context, id int32) (*model.TemplateM, error)
 	List(ctx context.Context, page, pageSiz int, template *model.TemplateM) ([]*model.TemplateM, int64, error)
+	All(ctx context.Context, template *model.TemplateM) ([]*model.TemplateM, error)
 	Update(ctx context.Context, template *model.TemplateM) error
 	Delete(ctx context.Context, id int32) error
 }
@@ -53,6 +54,26 @@ func (t *templates) List(ctx context.Context, page, pageSize int, template *mode
 		return nil, 0, err
 	}
 	return templates, count, nil
+}
+
+func (t *templates) All(ctx context.Context, template *model.TemplateM) ([]*model.TemplateM, error) {
+	var templates []*model.TemplateM
+
+	query := t.db.WithContext(ctx).Model(&model.TemplateM{})
+
+	if template.Name != "" {
+		query = query.Where("name LIKE ?", "%"+template.Name+"%")
+	}
+
+	if template.Brief != "" {
+		query = query.Where("brief LIKE ?", "%"+template.Brief+"%")
+	}
+
+	if err := query.Find(&templates).Error; err != nil {
+		return nil, err
+	}
+
+	return templates, nil
 }
 
 func (t *templates) Update(ctx context.Context, template *model.TemplateM) error {

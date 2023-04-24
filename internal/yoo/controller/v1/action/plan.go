@@ -215,7 +215,7 @@ ALTER TABLE ` + "`menus`" + `
 `)
 
 	for int64((r.Page-1)*r.PageSize) < total {
-		var list []*v1.GetTaskResponse
+		var list []*v1.ListTaskResponse
 		var err error
 		list, total, err = b.Tasks().List(c, r)
 		if err != nil {
@@ -230,7 +230,7 @@ ALTER TABLE ` + "`menus`" + `
 		r.Page += 1
 		g, ctx := errgroup.WithContext(context.Background())
 		for _, task := range list {
-			func(task *v1.GetTaskResponse) {
+			func(task *v1.ListTaskResponse) {
 				g.Go(func() error {
 					select {
 					case <-ctx.Done():
@@ -493,7 +493,7 @@ func prepareToExec(pid int32, onlyFailed bool) (string, string, string, error) {
 	return bundles, www, repos, nil
 }
 
-func runBuildFlow(task *v1.GetTaskResponse, b biz.Biz, c context.Context, repos string, www string, onlyFailed bool) (string, string, error) {
+func runBuildFlow(task *v1.ListTaskResponse, b biz.Biz, c context.Context, repos string, www string, onlyFailed bool) (string, string, error) {
 	log.Infow("query project", "id", task.ProjectID)
 	// 1. 查询 project
 	p, err := b.Projects().Get(c, task.ProjectID)

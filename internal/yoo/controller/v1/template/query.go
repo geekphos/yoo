@@ -54,3 +54,26 @@ func (ctrl *TemplateController) List(c *gin.Context) {
 		"code": 0,
 	})
 }
+
+func (ctrl *TemplateController) All(c *gin.Context) {
+	log.C(c).Infow("All template function called")
+
+	var r v1.AllTemplateRequest
+
+	if err := c.ShouldBindQuery(&r); err != nil {
+		if errs, _ := err.(validator.ValidationErrors); errs != nil {
+			core.WriteResponse(c, errno.ErrInvalidParameter.SetMessage(veldt.Translate(errs)), nil)
+		} else {
+			core.WriteResponse(c, errno.ErrBind, nil)
+		}
+		return
+	}
+
+	resp, err := ctrl.b.Templates().All(c, &r)
+	if err != nil {
+		core.WriteResponse(c, err, nil)
+		return
+	}
+
+	core.WriteResponse(c, nil, resp)
+}

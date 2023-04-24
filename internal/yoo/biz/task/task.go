@@ -17,6 +17,7 @@ type TaskBiz interface {
 	Get(ctx context.Context, id int32) (*v1.GetTaskResponse, error)
 	List(ctx context.Context, r *v1.ListTaskRequest) ([]*v1.ListTaskResponse, int64, error)
 	All(ctx context.Context, r *v1.AllTaskRequest) ([]*v1.AllTaskResponse, error)
+	Delete(ctx context.Context, id int32) error
 }
 
 type taskBiz struct {
@@ -105,4 +106,12 @@ func (b *taskBiz) All(ctx context.Context, r *v1.AllTaskRequest) ([]*v1.AllTaskR
 	}
 
 	return resp, nil
+}
+
+func (b *taskBiz) Delete(ctx context.Context, id int32) error {
+	if err := b.ds.Tasks().Delete(ctx, id); err != nil {
+		return errno.ErrTaskNotFound
+	}
+
+	return nil
 }

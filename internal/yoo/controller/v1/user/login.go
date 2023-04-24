@@ -35,6 +35,9 @@ func (ctrl *UserController) Login(c *gin.Context) {
 	if resp, err := ctrl.b.Users().Login(c, &r); err != nil {
 		core.WriteResponse(c, err, nil)
 	} else {
-		core.WriteResponse(c, nil, resp)
+		core.WriteResponse(c, nil, gin.H{
+			"data": resp,
+			"code": 0,
+		})
 	}
 }

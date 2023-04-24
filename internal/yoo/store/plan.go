@@ -13,6 +13,7 @@ type PlanStore interface {
 	Get(ctx context.Context, id int32) (*model.PlanM, error)
 	List(ctx context.Context, r *v1.ListPlanRequest) ([]*model.PlanM, int64, error)
 	Update(ctx context.Context, plan *model.PlanM) error
+	Delete(ctx context.Context, id int32) error
 }
 
 type plans struct {
@@ -62,4 +63,8 @@ func (p *plans) List(ctx context.Context, r *v1.ListPlanRequest) ([]*model.PlanM
 
 func (p *plans) Update(ctx context.Context, plan *model.PlanM) error {
 	return p.db.WithContext(ctx).Save(plan).Error
+}
+
+func (p *plans) Delete(ctx context.Context, id int32) error {
+	return p.db.WithContext(ctx).Delete(&model.PlanM{}, id).Error
 }

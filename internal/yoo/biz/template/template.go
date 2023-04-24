@@ -16,7 +16,9 @@ type TemplateBiz interface {
 	Create(ctx context.Context, r *v1.CreateTemplateRequest, id int32) error
 	Get(ctx context.Context, id int32) (*v1.GetTemplateResponse, error)
 	List(ctx context.Context, r *v1.ListTemplateRequest) ([]*v1.ListTemplateResponse, int64, error)
+	All(ctx context.Context, r *v1.AllTemplateRequest) ([]*v1.AllTemplateResponse, error)
 	Update(ctx context.Context, r *v1.UpdateTemplateRequest) error
+	Delete(ctx context.Context, id int32) error
 }
 
 type templateBiz struct {
@@ -91,11 +93,34 @@ func (b *templateBiz) List(ctx context.Context, r *v1.ListTemplateRequest) ([]*v
 	return resp, count, nil
 }
 
+func (b *templateBiz) All(ctx context.Context, r *v1.AllTemplateRequest) ([]*v1.AllTemplateResponse, error) {
+	var templateM = &model.TemplateM{}
+	_ = copier.Copy(templateM, r)
+
+	templates, err := b.ds.Templates().All(ctx, templateM)
+	if err != nil {
+		return nil, errno.InternalServerError
+	}
+
+	var resp = make([]*v1.AllTemplateResponse, 0, len(templates))
+	for _, template := range templates {
+		var r = &v1.AllTemplateResponse{}
+		_ = copier.Copy(r, template)
+		resp = append(resp, r)
+	}
+
+	return resp, nil
+}
+
 func (b *templateBiz) Update(ctx context.Context, r *v1.UpdateTemplateRequest) error {
 	templateM, err := b.ds.Templates().Get(ctx, int32(r.ID))
 	if err != nil {
-		return err
+		return errno.ErrTemplateNotFound
 	}
 	_ = copier.CopyWithOption(templateM, r, copier.Option{IgnoreEmpty: true})
 	return b.ds.Templates().Update(ctx, templateM)
+}
+
+func (b *templateBiz) Delete(ctx context.Context, id int32) error {
+	return b.ds.Templates().Delete(ctx, id)
 }

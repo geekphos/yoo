@@ -73,6 +73,7 @@ func (b *userBiz) Login(ctx context.Context, r *v1.LoginRequest) (*v1.LoginRespo
 	return &v1.LoginResponse{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
+		TokenType:    "Bearer",
 	}, nil
 }
 
@@ -124,5 +125,6 @@ func (b *userBiz) Refresh(ctx context.Context, email string) (*v1.RefreshRespons
 	return &v1.RefreshResponse{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
+		TokenType:    "Bearer",
 	}, nil
 }

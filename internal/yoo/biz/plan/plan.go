@@ -15,6 +15,7 @@ type PlanBiz interface {
 	Get(ctx context.Context, id int32) (*v1.GetPlanResponse, error)
 	List(ctx context.Context, r *v1.ListPlanRequest) ([]*v1.ListPlanResponse, int64, error)
 	Update(ctx context.Context, r *v1.UpdatePlanRequest, id int32) error
+	Delete(ctx context.Context, id int32) error
 }
 
 type planBiz struct {
@@ -97,6 +98,14 @@ func (b *planBiz) Update(ctx context.Context, r *v1.UpdatePlanRequest, id int32)
 			return errno.ErrPlanAlreadyExist
 		}
 		return err
+	}
+
+	return nil
+}
+
+func (b *planBiz) Delete(ctx context.Context, id int32) error {
+	if err := b.ds.Plans().Delete(ctx, id); err != nil {
+		return errno.ErrPlanNotFound
 	}
 
 	return nil

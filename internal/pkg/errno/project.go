@@ -9,4 +9,6 @@ var (
 
 	// ErrCompressBundles is returned when the compress bundles failed.
 	ErrCompressBundles = &Errno{HTTP: 500, Code: "FailedOperation.CompressBundles", Message: "Compress bundles failed."}
+	// ErrProjectDelete is returned when the project delete failed.
+	ErrProjectDelete = &Errno{HTTP: 500, Code: "FailedOperation.ProjectDelete", Message: "Project delete failed."}
 )

@@ -15,13 +15,14 @@ type CreateProjectRequest struct {
 	WebURL      string   `json:"web_url" binding:"required"`
 	BuildCmd    string   `json:"build_cmd" binding:"required"`
 	Dist        string   `json:"dist" binding:"required"`
-	PID         int      `json:"pid" binding:"required"`
+	Pid         int      `json:"pid" binding:"required"`
 	Description string   `json:"description" binding:"required"`
 }
 
 type GetProjectResponse struct {
 	ID          int32          `json:"id"`
 	UserID      int32          `json:"user_id"`
+	Pid         int32          `json:"pid"`
 	Username    string         `json:"username"`
 	Name        string         `json:"name"`
 	Badge       string         `json:"badge"`
@@ -32,7 +33,6 @@ type GetProjectResponse struct {
 	WebURL      string         `json:"web_url"`
 	BuildCmd    string         `json:"build_cmd"`
 	Dist        string         `json:"dist"`
-	PID         int            `json:"pid"`
 	Description string         `json:"description"`
 	CreatedAt   time.Time      `json:"created_at"`
 	UpdatedAt   time.Time      `json:"updated_at"`
@@ -50,6 +50,7 @@ type ListProjectRequest struct {
 type ListProjectResponse struct {
 	ID          int32          `json:"id"`
 	UserID      int32          `json:"user_id"`
+	Pid         int            `json:"pid"`
 	Username    string         `json:"username"`
 	Name        string         `json:"name"`
 	Badge       string         `json:"badge"`
@@ -60,7 +61,6 @@ type ListProjectResponse struct {
 	WebURL      string         `json:"web_url"`
 	BuildCmd    string         `json:"build_cmd"`
 	Dist        string         `json:"dist"`
-	PID         int            `json:"pid"`
 	Description string         `json:"description"`
 	CreatedAt   time.Time      `json:"created_at"`
 	UpdatedAt   time.Time      `json:"updated_at"`
@@ -75,6 +75,6 @@ type UpdateProjectRequest struct {
 	BuildCmd    *string  `json:"build_cmd"`
 	Dist        *string  `json:"dist"`
 	Category    *string  `json:"category"`
-	Tags        []string `json:"tags"`
+	Tags        []string `json:"tags" binding:"dive,required"`
 	Description *string  `json:"description"`
 }

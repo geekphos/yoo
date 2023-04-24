@@ -14,6 +14,7 @@ type TaskStore interface {
 	Update(ctx context.Context, task *model.TaskM) error
 	List(ctx context.Context, page, pageSize int, task *model.TaskM) ([]*model.TaskM, int64, error)
 	All(ctx context.Context, task *model.TaskM) ([]*model.TaskM, error)
+	Delete(ctx context.Context, id int32) error
 }
 
 type tasks struct {
@@ -62,4 +63,8 @@ func (p *tasks) All(ctx context.Context, task *model.TaskM) ([]*model.TaskM, err
 		return nil, err
 	}
 	return taskMs, nil
+}
+
+func (p *tasks) Delete(ctx context.Context, id int32) error {
+	return p.db.WithContext(ctx).Delete(&model.TaskM{}, id).Error
 }

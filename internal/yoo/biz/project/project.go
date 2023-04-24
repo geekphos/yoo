@@ -2,8 +2,12 @@ package project
 
 import (
 	"context"
+	"fmt"
 	"github.com/gin-gonic/gin"
+	"github.com/spf13/viper"
 	"gorm.io/datatypes"
+	"io"
+	"net/http"
 	"phos.cc/yoo/internal/pkg/known"
 	"regexp"
 	"strings"
@@ -23,6 +27,7 @@ type ProjectBiz interface {
 	List(ctx context.Context, r *v1.ListProjectRequest) ([]*v1.ListProjectResponse, int64, error)
 	Categories(ctx context.Context) ([]string, error)
 	Tags(ctx context.Context) ([]string, error)
+	Delete(ctx context.Context, id int32) error
 }
 
 type projectBiz struct {
@@ -128,4 +133,44 @@ func (b *projectBiz) Categories(ctx context.Context) ([]string, error) {
 
 func (b *projectBiz) Tags(ctx context.Context) ([]string, error) {
 	return b.ds.Projects().Tags(ctx)
+}
+
+func (b *projectBiz) Delete(ctx context.Context, id int32) error {
+
+	project, err := b.ds.Projects().Get(ctx, id)
+	if err != nil {
+		return errno.ErrProjectNotFound
+	}
+
+	// 删除gitlab上的项目
+	client := &http.Client{}
+
+	req, err := http.NewRequest("DELETE", fmt.Sprintf("%s/api/v4/projects/%d", viper.GetString("gitlab-server"), project.Pid), nil)
+	if err != nil {
+		return err
+	}
+
+	req.Header.Add("PRIVATE-TOKEN", viper.GetString("gitlab-token"))
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return errno.InternalServerError
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+
+	if err != nil {
+		return errno.InternalServerError
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return errno.ErrProjectDelete.SetMessage(string(body))
+	}
+
+	if err := b.ds.Projects().Delete(ctx, id); err != nil {
+		return errno.ErrProjectNotFound
+	}
+
+	return nil
 }

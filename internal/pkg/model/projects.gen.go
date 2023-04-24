@@ -16,6 +16,7 @@ const TableNameProjectM = "projects"
 type ProjectM struct {
 	ID          int32          `gorm:"column:id;primaryKey;autoIncrement:true" json:"id"`
 	UserID      int32          `gorm:"column:user_id;not null" json:"user_id"`
+	Pid         int32          `gorm:"column:pid" json:"pid"` // 项目在 gitlab 中的 id
 	Name        string         `gorm:"column:name;not null" json:"name"`
 	Category    string         `gorm:"column:category" json:"category"`      // 项目分类
 	Tags        datatypes.JSON `gorm:"column:tags" json:"tags"`              // 项目标签

@@ -26,7 +26,7 @@ type ListTaskResponse struct {
 }
 
 type UpdateTaskRequest struct {
-	Status *int32 `json:"status"`
+	Status int32 `json:"status"`
 }
 
 type ListTaskRequest struct {

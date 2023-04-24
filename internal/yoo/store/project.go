@@ -16,6 +16,7 @@ type ProjectStore interface {
 	List(ctx context.Context, page, pageSize int, project *model.ProjectM) ([]*model.ProjectM, int64, error)
 	Categories(ctx context.Context) ([]string, error)
 	Tags(ctx context.Context) ([]string, error)
+	Delete(ctx context.Context, id int32) error
 }
 
 type projects struct {
@@ -105,4 +106,8 @@ func (p *projects) Tags(ctx context.Context) ([]string, error) {
 	})
 
 	return lo.Union(lo.Flatten(res)), nil
+}
+
+func (p *projects) Delete(ctx context.Context, id int32) error {
+	return p.db.WithContext(ctx).Delete(&model.ProjectM{}, id).Error
 }
