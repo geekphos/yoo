@@ -309,7 +309,7 @@ ALTER TABLE ` + "`menus`" + `
 }
 `)
 
-	sqlsb.WriteString("\nINSERT INTO menus (`name`, `menu_type`, `href`, `number`, `created_at`, `updated_at`) values ('前端资源', 1, '/resource', 1, NOW(), NOW());\nINSERT INTO menus (`name`, `menu_type`, `href`, `number`, `resource_id`, `parent_id`, `created_at`, `updated_at`) values ('资源管理', 2, '/manage', 1, (select id from resources where resources.name = 'yoo-resource'),(select last_insert_id()), NOW(), NOW())")
+	// sqlsb.WriteString("\nINSERT INTO menus (`name`, `menu_type`, `href`, `number`, `created_at`, `updated_at`) values ('前端资源', 1, '/resource', 1, NOW(), NOW());\nINSERT INTO menus (`name`, `menu_type`, `href`, `number`, `resource_id`, `parent_id`, `created_at`, `updated_at`) values ('资源管理', 2, '/manage', 1, (select id from resources where resources.name = 'yoo-resource'),(select last_insert_id()), NOW(), NOW())")
 
 	// 在 bundles 目录下生成 default.conf
 	file, err := os.Create(fmt.Sprintf("%s/default.conf", bundles))
@@ -340,13 +340,16 @@ ALTER TABLE ` + "`menus`" + `
 version: "3.9"
 services:
   yoo-mysql:
-    image: "mysql:latest"
+    image: "mysql:8.0"
     restart: unless-stopped
+	ports:
+	  - "3307:3306"
     environment:
       LANG: C.UTF-8
       MYSQL_ROOT_PASSWORD: root
     volumes:
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+	  - ./data:/var/lib/mysql
     command: ['--default-authentication-plugin=mysql_native_password', '--character-set-server=utf8mb4', '--collation-server=utf8mb4_general_ci']
 
   yoo-nginx:
@@ -363,8 +366,6 @@ services:
   yoo-resource:
     image: "phostann/yoo-resource:latest"
     restart: unless-stopped
-    ports:
-      - "8080:8080"
     volumes:
       - ./configs/:/app/configs/
       - ./assets/:/opt/assets

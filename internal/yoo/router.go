@@ -60,9 +60,11 @@ func installRouters(g *gin.Engine) error {
 		{
 			tempaltev1.GET("/:id", tc.Get)
 			tempaltev1.GET("", tc.List)
+			tempaltev1.GET("/all", tc.All)
 
 			tempaltev1.Use(mw.Auth())
 			tempaltev1.POST("", tc.Create)
+			tempaltev1.PATCH("/:id", tc.Update)
 			tempaltev1.DELETE("/:id", tc.Delete)
 		}
 

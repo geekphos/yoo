@@ -68,6 +68,7 @@ type ListProjectResponse struct {
 
 type UpdateProjectRequest struct {
 	ID          int32    `json:"id" uri:"id" binding:"required"`
+	Pid         int32    `json:"pid" binding:"required"`
 	Name        *string  `json:"name"`
 	SSHURL      *string  `json:"ssh_url"`
 	HTTPURL     *string  `json:"http_url"`

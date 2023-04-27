@@ -84,6 +84,7 @@ func (b *projectBiz) Update(ctx context.Context, r *v1.UpdateProjectRequest) err
 
 	_ = copier.CopyWithOption(projectM, r, copier.Option{IgnoreEmpty: true})
 	projectM.ID = r.ID
+	projectM.Tags = datatypes.JSON(`["` + strings.Join(r.Tags, ",") + `"]`)
 
 	if err := b.ds.Projects().Update(ctx, projectM); err != nil {
 		return err

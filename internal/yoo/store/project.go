@@ -58,7 +58,7 @@ func (p *projects) List(ctx context.Context, page, pageSize int, project *model.
 	}
 
 	if project.Description != "" {
-		query = query.Where("description LIKE ?", "%"+project.Name+"%")
+		query = query.Where("description LIKE ?", "%"+project.Description+"%")
 	}
 
 	if project.Category != "" {
