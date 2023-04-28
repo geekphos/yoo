@@ -61,20 +61,6 @@ func (p *projects) List(ctx context.Context, page, pageSize int, project *model.
 		query = query.Where("description LIKE ?", "%"+project.Description+"%")
 	}
 
-	if project.Category != "" {
-		query = query.Where("category = ?", project.Category)
-	}
-
-	if project.Tags != nil {
-		var tags []string
-		if err := json.Unmarshal(project.Tags, &tags); err != nil {
-			return nil, 0, err
-		}
-		for _, tag := range tags {
-			query = query.Where(datatypes.JSONArrayQuery("tags").Contains(tag))
-		}
-	}
-
 	if err := query.Count(&count).Error; err != nil {
 		return nil, 0, err
 	}

@@ -6,7 +6,7 @@ gitlab-server: http://192.168.31.162:8080
 
 # MySQL 数据库相关配置
 db:
-  host: 192.168.31.120:3306  # MySQL 机器 IP 和端口，默认 127.0.0.1:3306
+  host: 192.168.31.120  # MySQL 机器 IP 和端口，默认 127.0.0.1:3306
   username: root # MySQL 用户名(建议授权最小权限集)
   password: yotoo123qwe # MySQL 用户密码
   database: yoo # yoo 系统所用的数据库名

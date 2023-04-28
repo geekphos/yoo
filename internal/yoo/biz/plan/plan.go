@@ -32,6 +32,7 @@ func (b *planBiz) Create(ctx context.Context, r *v1.CreatePlanRequest, id int32)
 	var planM = &model.PlanM{}
 	_ = copier.Copy(planM, r)
 	planM.UserID = id
+	planM.Status = 1
 
 	if err := b.ds.Plans().Create(ctx, planM); err != nil {
 		if match, _ := regexp.MatchString("Duplicate entry '.*' for key 'name'", err.Error()); match {

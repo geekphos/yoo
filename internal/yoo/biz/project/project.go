@@ -4,15 +4,12 @@ import (
 	"context"
 	"fmt"
 	"github.com/gin-gonic/gin"
+	"github.com/jinzhu/copier"
 	"github.com/spf13/viper"
-	"gorm.io/datatypes"
 	"io"
 	"net/http"
 	"phos.cc/yoo/internal/pkg/known"
 	"regexp"
-	"strings"
-
-	"github.com/jinzhu/copier"
 
 	"phos.cc/yoo/internal/pkg/errno"
 	"phos.cc/yoo/internal/pkg/model"
@@ -45,7 +42,6 @@ func (b *projectBiz) Create(ctx context.Context, r *v1.CreateProjectRequest) err
 	_ = copier.Copy(projectM, r)
 	userID := int32((ctx.(*gin.Context)).GetInt(known.XUserIDKey))
 	projectM.UserID = userID
-	projectM.Tags = datatypes.JSON(`["` + strings.Join(r.Tags, ",") + `"]`)
 
 	if err := b.ds.Projects().Create(ctx, projectM); err != nil {
 		if match, _ := regexp.MatchString("Duplicate entry '.*' for key '(name|repo|repo_id)'", err.Error()); match {
@@ -84,7 +80,6 @@ func (b *projectBiz) Update(ctx context.Context, r *v1.UpdateProjectRequest) err
 
 	_ = copier.CopyWithOption(projectM, r, copier.Option{IgnoreEmpty: true})
 	projectM.ID = r.ID
-	projectM.Tags = datatypes.JSON(`["` + strings.Join(r.Tags, ",") + `"]`)
 
 	if err := b.ds.Projects().Update(ctx, projectM); err != nil {
 		return err
@@ -96,10 +91,6 @@ func (b *projectBiz) Update(ctx context.Context, r *v1.UpdateProjectRequest) err
 func (b *projectBiz) List(ctx context.Context, r *v1.ListProjectRequest) ([]*v1.ListProjectResponse, int64, error) {
 	var projectM = &model.ProjectM{}
 	_ = copier.Copy(projectM, r)
-
-	if r.Tag != "" {
-		projectM.Tags = datatypes.JSON(`["` + r.Tag + `"]`)
-	}
 
 	projectMs, count, err := b.ds.Projects().List(ctx, r.Page, r.PageSize, projectM)
 	if err != nil {
@@ -148,7 +139,7 @@ func (b *projectBiz) Delete(ctx context.Context, id int32) error {
 
 	req, err := http.NewRequest("DELETE", fmt.Sprintf("%s/api/v4/projects/%d", viper.GetString("gitlab-server"), project.Pid), nil)
 	if err != nil {
-		return err
+		return errno.ErrProjectNotFound
 	}
 
 	req.Header.Add("PRIVATE-TOKEN", viper.GetString("gitlab-token"))
@@ -162,7 +153,7 @@ func (b *projectBiz) Delete(ctx context.Context, id int32) error {
 	body, err := io.ReadAll(resp.Body)
 
 	if err != nil {
-		return errno.InternalServerError
+		return errno.ErrProjectNotFound
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {

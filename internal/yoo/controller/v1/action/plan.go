@@ -33,7 +33,6 @@ import (
 	v1 "phos.cc/yoo/pkg/api/yoo/v1"
 )
 
-// const CACHE_ROOT = "/.yoo"
 const CACHE_ROOT = "/tmp/.yoo"
 
 type TaskErr struct {
@@ -183,28 +182,27 @@ USE yoo;
 
 CREATE TABLE IF NOT EXISTS ` + "`resources`" + `
 (
-    ` + "`id`" + `         int PRIMARY KEY AUTO_INCREMENT,
-    ` + "`name`" + `       varchar(255) UNIQUE NOT NULL COMMENT '项目名',
-    ` + "`label`" + `      varchar(255)        NOT NULL COMMENT '中文说明，一般为项目 description',
-    ` + "`badge`" + `      varchar(255)        NOT NULL COMMENT '应用图标',
-    ` + "`category`" + `   varchar(255)        NOT NULL COMMENT '应用分类',
-    ` + "`tags`" + `       json                NOT NULL COMMENT '应用的标签列表',
-    ` + "`created_at`" + ` timestamp           NOT NULL,
-    ` + "`updated_at`" + ` timestamp           NOT NULL
+    ` + "`id`" + `               int PRIMARY KEY AUTO_INCREMENT,
+    ` + "`name`" + `             varchar(255) UNIQUE NOT NULL COMMENT '项目名',
+    ` + "`description`" + `      varchar(255)        NOT NULL COMMENT '中文说明，一般为项目 description',
+    ` + "`badge`" + `            varchar(255)        NOT NULL COMMENT '应用图标',
+    ` + "`created_at`" + `       timestamp           NOT NULL,
+    ` + "`updated_at`" + `       timestamp           NOT NULL
 );
 
-CREATE TABLE ` + "`menus`" + `
-(
-    ` + "`id`" + `          int PRIMARY KEY AUTO_INCREMENT,
-    ` + "`name`" + `        varchar(255) NOT NULL COMMENT '菜单名称',
-    ` + "`icon`" + `        varchar(255) NOT NULL DEFAULT 'default.png' COMMENT '图标',
-    ` + "`menu_type`" + `   tinyint      NOT NULL DEFAULT 1 COMMENT '1 目录, 2 页面, 3 外链',
-    ` + "`resource_id`" + ` int COMMENT '资源 id',
-    ` + "`href`" + `        varchar(255) UNIQUE COMMENT '路径或者外链',
-    ` + "`parent_id`" + `   int COMMENT '父级菜单 id, 若为根目录, 则为空',
-    ` + "`number`" + `      int          NOT NULL COMMENT '菜单顺序编号',
-    ` + "`created_at`" + `  timestamp    NOT NULL,
-    ` + "`updated_at`" + `  timestamp    NOT NULL
+CREATE TABLE ` + "`menus`" + ` (
+  ` + "`id`" + ` int PRIMARY KEY AUTO_INCREMENT,
+  ` + "`name`" + ` varchar(255) NOT NULL COMMENT '菜单名称',
+  ` + "`icon`" + ` varchar(255) NOT NULL DEFAULT "default.png" COMMENT '图标',
+  ` + "`letter`" + ` varchar(255) NOT NULL COMMENT '中文首字母',
+  ` + "`menu_type`" + ` tinyint NOT NULL DEFAULT 1 COMMENT '1 目录, 2 页面, 3 外链',
+  ` + "`resource_id`" + ` int COMMENT '资源 id',
+  ` + "`href`" + ` varchar(255) UNIQUE COMMENT '路径或者外链',
+  ` + "`parent_id`" + ` int COMMENT '父级菜单 id, 若为根目录, 则为空',
+  ` + "`number`" + ` int NOT NULL COMMENT '菜单顺序编号',
+  ` + "`categories`" + ` json COMMENT '分类 id 列表',
+  ` + "`created_at`" + ` timestamp NOT NULL,
+  ` + "`updated_at`" + ` timestamp NOT NULL
 );
 
 ALTER TABLE ` + "`menus`" + `
@@ -212,6 +210,16 @@ ALTER TABLE ` + "`menus`" + `
 
 ALTER TABLE ` + "`menus`" + `
     ADD FOREIGN KEY (` + "`parent_id`" + `) REFERENCES ` + "`menus`" + ` (` + "`id`" + `);
+
+CREATE TABLE ` + "`category`" + ` (
+  ` + "`id`" + ` int PRIMARY KEY AUTO_INCREMENT,
+  ` + "`name`" + ` varchar(255) NOT NULL COMMENT '名称',
+  ` + "`parent_id`" + ` int COMMENT '父级 id',
+  ` + "`created_at`" + ` timestamp NOT NULL,
+  ` + "`updated_at`" + ` timestamp NOT NULL
+);
+
+ALTER TABLE ` + "`category`" + ` ADD FOREIGN KEY (` + "`parent_id`" + `) REFERENCES ` + "`category`" + ` (` + "`id`" + `);
 `)
 
 	for int64((r.Page-1)*r.PageSize) < total {
@@ -569,7 +577,7 @@ func runBuildFlow(task *v1.ListTaskResponse, b biz.Biz, c context.Context, repos
     }
 `, p.Name, p.Name, p.Name)
 
-	sql := fmt.Sprintf("\nINSERT INTO `resources` (`name`, `label`, `badge`, `category`, `tags`, `created_at`, `updated_at`) VALUES ('%s', '%s', '%s', '%s', '%s', NOW(), NOW());", p.Name, p.Description, "default.png", "教育", `["学生", "教师"]`)
+	sql := fmt.Sprintf("\nINSERT INTO `resources` (`name`, `description`, `badge`, `created_at`, `updated_at`) VALUES ('%s', '%s', '%s', NOW(), NOW());", p.Name, p.Description, "default.png")
 
 	return location, sql, nil
 }

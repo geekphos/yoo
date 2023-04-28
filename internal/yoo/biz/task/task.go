@@ -33,6 +33,7 @@ func New(ds store.IStore) TaskBiz {
 func (b *taskBiz) Create(ctx context.Context, r *v1.CreateTaskRequest) error {
 	var taskM = &model.TaskM{}
 	_ = copier.Copy(taskM, r)
+	taskM.Status = 1
 
 	if err := b.ds.Tasks().Create(ctx, taskM); err != nil {
 		if match, _ := regexp.MatchString("Duplicate entry '.*' for key '(plan_id|project_id)'", err.Error()); match {
