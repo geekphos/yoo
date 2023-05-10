@@ -1,6 +1,8 @@
 package project
 
 import (
+	"strconv"
+
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
 	"phos.cc/yoo/internal/pkg/core"
@@ -8,7 +10,6 @@ import (
 	"phos.cc/yoo/internal/pkg/log"
 	veldt "phos.cc/yoo/internal/pkg/validator"
 	v1 "phos.cc/yoo/pkg/api/yoo/v1"
-	"strconv"
 )
 
 func (ctrl *ProjectController) Get(c *gin.Context) {
@@ -60,30 +61,24 @@ func (ctrl *ProjectController) List(c *gin.Context) {
 	})
 }
 
-func (ctrl *ProjectController) Categories(c *gin.Context) {
+func (ctrl *ProjectController) All(c *gin.Context) {
+	var r v1.ListProjectRequest
 
-	log.C(c).Infow("Categories project function called")
+	if err := c.ShouldBindQuery(&r); err != nil {
+		if errs, ok := err.(validator.ValidationErrors); ok {
+			core.WriteResponse(c, errno.ErrInvalidParameter.SetMessage(veldt.Translate(errs)), nil)
+		} else {
+			core.WriteResponse(c, errno.ErrBind, nil)
+		}
+		return
+	}
 
-	resp, err := ctrl.b.Projects().Categories(c)
+	resp, err := ctrl.b.Projects().All(c, &r)
 	if err != nil {
 		core.WriteResponse(c, err, nil)
 		return
 	}
-	core.WriteResponse(c, nil, gin.H{
-		"data": resp,
-		"code": 0,
-	})
-}
 
-func (ctrl *ProjectController) Tags(c *gin.Context) {
-
-	log.C(c).Infow("Tags project function called")
-
-	resp, err := ctrl.b.Projects().Tags(c)
-	if err != nil {
-		core.WriteResponse(c, err, nil)
-		return
-	}
 	core.WriteResponse(c, nil, gin.H{
 		"data": resp,
 		"code": 0,

@@ -186,6 +186,8 @@ CREATE TABLE IF NOT EXISTS ` + "`resources`" + `
     ` + "`name`" + `             varchar(255) UNIQUE NOT NULL COMMENT '项目名',
     ` + "`description`" + `      varchar(255)        NOT NULL COMMENT '中文说明，一般为项目 description',
     ` + "`badge`" + `            varchar(255)        NOT NULL COMMENT '应用图标',
+	` + "`fake`" + `             tinyint(1) NOT NULL DEFAULT 0 COMMENT '应用为无实体应用, 0 不是, 1 是',
+	` + "`url`" + `              varchar(255) COMMENT '非实体应用的链接',
     ` + "`created_at`" + `       timestamp           NOT NULL,
     ` + "`updated_at`" + `       timestamp           NOT NULL
 );
@@ -350,14 +352,14 @@ services:
   yoo-mysql:
     image: "mysql:8.0"
     restart: unless-stopped
-	ports:
-	  - "3307:3306"
+    ports:
+      - "3307:3306"
     environment:
       LANG: C.UTF-8
       MYSQL_ROOT_PASSWORD: root
     volumes:
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
-	  - ./data:/var/lib/mysql
+      - ./data:/var/lib/mysql
     command: ['--default-authentication-plugin=mysql_native_password', '--character-set-server=utf8mb4', '--collation-server=utf8mb4_general_ci']
 
   yoo-nginx:
@@ -372,7 +374,7 @@ services:
       - yoo-mysql
 
   yoo-resource:
-    image: "phostann/yoo-resource:latest"
+    image: "phostann/yoo-resource:0.0.5"
     restart: unless-stopped
     volumes:
       - ./configs/:/app/configs/
@@ -577,7 +579,7 @@ func runBuildFlow(task *v1.ListTaskResponse, b biz.Biz, c context.Context, repos
     }
 `, p.Name, p.Name, p.Name)
 
-	sql := fmt.Sprintf("\nINSERT INTO `resources` (`name`, `description`, `badge`, `created_at`, `updated_at`) VALUES ('%s', '%s', '%s', NOW(), NOW());", p.Name, p.Description, "default.png")
+	sql := fmt.Sprintf("\nINSERT INTO `resources` (`name`, `description`, `badge`, `fake`, `created_at`, `updated_at`) VALUES ('%s', '%s', '%s', 0, NOW(), NOW());", p.Name, p.Description, "default.png")
 
 	return location, sql, nil
 }

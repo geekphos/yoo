@@ -14,6 +14,15 @@ func (ctrl *ProjectController) Delete(c *gin.Context) {
 		return
 	}
 
+	// 查询是否有 task 在使用 project
+	if task, err := ctrl.b.Tasks().GetByPid(c, int32(id)); err != nil {
+		core.WriteResponse(c, err, nil)
+		return
+	} else if len(task) > 0 {
+		core.WriteResponse(c, errno.ErrProjectInUse, nil)
+		return
+	}
+
 	if err := ctrl.b.Projects().Delete(c, int32(id)); err != nil {
 		core.WriteResponse(c, err, nil)
 		return

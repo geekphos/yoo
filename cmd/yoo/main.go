@@ -3,9 +3,11 @@ package main
 import (
 	"fmt"
 	"os"
+
 	"phos.cc/yoo/internal/yoo"
+
+	_ "go.uber.org/automaxprocs"
 )
-import _ "go.uber.org/automaxprocs"
 
 func main() {
 	command := yoo.NewYooCommand()

@@ -2,14 +2,14 @@ package project
 
 import (
 	"context"
-	"fmt"
+	"regexp"
+
+	"github.com/spf13/viper"
+	"phos.cc/yoo/internal/yoo/gitlab"
+
 	"github.com/gin-gonic/gin"
 	"github.com/jinzhu/copier"
-	"github.com/spf13/viper"
-	"io"
-	"net/http"
 	"phos.cc/yoo/internal/pkg/known"
-	"regexp"
 
 	"phos.cc/yoo/internal/pkg/errno"
 	"phos.cc/yoo/internal/pkg/model"
@@ -18,39 +18,60 @@ import (
 )
 
 type ProjectBiz interface {
-	Create(ctx context.Context, r *v1.CreateProjectRequest) error
+	Create(ctx context.Context, r *v1.CreateProjectRequest) (*v1.CreateProjectResponse, error)
 	Get(ctx context.Context, id int32) (*v1.GetProjectResponse, error)
 	Update(ctx context.Context, r *v1.UpdateProjectRequest) error
 	List(ctx context.Context, r *v1.ListProjectRequest) ([]*v1.ListProjectResponse, int64, error)
-	Categories(ctx context.Context) ([]string, error)
-	Tags(ctx context.Context) ([]string, error)
+	All(ctx context.Context, r *v1.ListProjectRequest) ([]*v1.ListProjectResponse, error)
 	Delete(ctx context.Context, id int32) error
 }
 
 type projectBiz struct {
-	ds store.IStore
+	ds  store.IStore
+	git gitlab.IGitlab
 }
 
 var _ ProjectBiz = (*projectBiz)(nil)
 
 func New(ds store.IStore) ProjectBiz {
-	return &projectBiz{ds: ds}
+	return &projectBiz{ds: ds, git: gitlab.New(viper.GetString("gitlab.token"), viper.GetString("gitlab.server"), viper.GetInt32("gitlab.namespace"))}
 }
 
-func (b *projectBiz) Create(ctx context.Context, r *v1.CreateProjectRequest) error {
-	var projectM = &model.ProjectM{}
-	_ = copier.Copy(projectM, r)
+func (b *projectBiz) Create(ctx context.Context, r *v1.CreateProjectRequest) (*v1.CreateProjectResponse, error) {
+
+	// 在 gitlab 中创建项目
+	repo, err := b.git.Create(ctx, &model.GitlabRepo{
+		Name:        r.Name,
+		Description: r.Description,
+	})
+
+	if err != nil {
+		return nil, errno.ErrCreateRepoFail
+	}
+
+	var projectM = model.ProjectM{}
+	_ = copier.Copy(&projectM, r)
+
+	projectM.Pid = repo.ID
+	projectM.SSHURL = repo.SSHURL
+	projectM.HTTPURL = repo.HTTPURL
+	projectM.WebURL = repo.WebURL
+
 	userID := int32((ctx.(*gin.Context)).GetInt(known.XUserIDKey))
 	projectM.UserID = userID
 
-	if err := b.ds.Projects().Create(ctx, projectM); err != nil {
+	if err := b.ds.Projects().Create(ctx, &projectM); err != nil {
 		if match, _ := regexp.MatchString("Duplicate entry '.*' for key '(name|repo|repo_id)'", err.Error()); match {
-			return errno.ErrProjectAlreadyExist
+			return nil, errno.ErrProjectAlreadyExist
 		}
-		return err
+		return nil, err
 	}
 
-	return nil
+	var resp v1.CreateProjectResponse
+
+	_ = copier.Copy(&resp, &projectM)
+
+	return &resp, nil
 }
 
 func (b *projectBiz) Get(ctx context.Context, id int32) (*v1.GetProjectResponse, error) {
@@ -76,6 +97,21 @@ func (b *projectBiz) Update(ctx context.Context, r *v1.UpdateProjectRequest) err
 	projectM, err := b.ds.Projects().Get(ctx, r.ID)
 	if err != nil {
 		return errno.ErrProjectNotFound
+	}
+
+	var repo model.GitlabRepo
+	repo.ID = projectM.Pid
+
+	if r.Name != nil {
+		repo.Name = *r.Name
+	}
+	if r.Description != nil {
+		repo.Description = *r.Description
+	}
+
+	// 更新 git
+	if err := b.git.Update(ctx, &repo); err != nil {
+		return errno.ErrUpdateRepoFail
 	}
 
 	_ = copier.CopyWithOption(projectM, r, copier.Option{IgnoreEmpty: true})
@@ -119,45 +155,16 @@ func (b *projectBiz) List(ctx context.Context, r *v1.ListProjectRequest) ([]*v1.
 	return resp, count, nil
 }
 
-func (b *projectBiz) Categories(ctx context.Context) ([]string, error) {
-	return b.ds.Projects().Categories(ctx)
-}
-
-func (b *projectBiz) Tags(ctx context.Context) ([]string, error) {
-	return b.ds.Projects().Tags(ctx)
-}
-
 func (b *projectBiz) Delete(ctx context.Context, id int32) error {
 
-	project, err := b.ds.Projects().Get(ctx, id)
+	p, err := b.ds.Projects().Get(ctx, id)
 	if err != nil {
 		return errno.ErrProjectNotFound
 	}
 
-	// 删除gitlab上的项目
-	client := &http.Client{}
-
-	req, err := http.NewRequest("DELETE", fmt.Sprintf("%s/api/v4/projects/%d", viper.GetString("gitlab-server"), project.Pid), nil)
-	if err != nil {
-		return errno.ErrProjectNotFound
-	}
-
-	req.Header.Add("PRIVATE-TOKEN", viper.GetString("gitlab-token"))
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return errno.InternalServerError
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-
-	if err != nil {
-		return errno.ErrProjectNotFound
-	}
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return errno.ErrProjectDelete.SetMessage(string(body))
+	// 删除 gitlab 中的项目
+	if err := b.git.Delete(ctx, p.Pid); err != nil {
+		return errno.ErrRepoNotExist
 	}
 
 	if err := b.ds.Projects().Delete(ctx, id); err != nil {
@@ -165,4 +172,35 @@ func (b *projectBiz) Delete(ctx context.Context, id int32) error {
 	}
 
 	return nil
+}
+
+func (b *projectBiz) All(ctx context.Context, r *v1.ListProjectRequest) ([]*v1.ListProjectResponse, error) {
+	var projectM = &model.ProjectM{}
+	_ = copier.Copy(projectM, r)
+
+	projectMs, err := b.ds.Projects().All(ctx, projectM)
+	if err != nil {
+		return nil, errno.InternalServerError
+	}
+
+	var userMap = make(map[int32]string)
+
+	var resp []*v1.ListProjectResponse
+	for _, projectM := range projectMs {
+		if _, ok := userMap[projectM.UserID]; !ok {
+			userM, err := b.ds.Users().Get(ctx, projectM.UserID)
+			if err != nil {
+				return nil, errno.ErrUserNotFound
+			}
+			userMap[projectM.UserID] = userM.Nickname
+		}
+
+		var project = &v1.ListProjectResponse{}
+		_ = copier.Copy(project, projectM)
+		project.Username = userMap[projectM.UserID]
+
+		resp = append(resp, project)
+	}
+
+	return resp, nil
 }

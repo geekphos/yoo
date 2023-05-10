@@ -5,14 +5,26 @@ import (
 )
 
 type CreateProjectRequest struct {
-	Name        string `json:"name" binding:"required"`
-	SSHURL      string `json:"ssh_url" binding:"required"`
-	HTTPURL     string `json:"http_url" binding:"required"`
-	WebURL      string `json:"web_url" binding:"required"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
 	BuildCmd    string `json:"build_cmd" binding:"required"`
 	Dist        string `json:"dist" binding:"required"`
-	Pid         int    `json:"pid" binding:"required"`
-	Description string `json:"description" binding:"required"`
+}
+
+type CreateProjectResponse struct {
+	ID          int32     `json:"id"`
+	UserID      int32     `json:"user_id"`
+	Pid         int32     `json:"pid"`
+	Username    string    `json:"username"`
+	Name        string    `json:"name"`
+	SSHURL      string    `json:"ssh_url"`
+	HTTPURL     string    `json:"http_url"`
+	WebURL      string    `json:"web_url"`
+	BuildCmd    string    `json:"build_cmd"`
+	Dist        string    `json:"dist"`
+	Description string    `json:"description"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type GetProjectResponse struct {
@@ -21,7 +33,6 @@ type GetProjectResponse struct {
 	Pid         int32     `json:"pid"`
 	Username    string    `json:"username"`
 	Name        string    `json:"name"`
-	Badge       string    `json:"badge"`
 	SSHURL      string    `json:"ssh_url"`
 	HTTPURL     string    `json:"http_url"`
 	WebURL      string    `json:"web_url"`
@@ -45,7 +56,6 @@ type ListProjectResponse struct {
 	Pid         int       `json:"pid"`
 	Username    string    `json:"username"`
 	Name        string    `json:"name"`
-	Badge       string    `json:"badge"`
 	SSHURL      string    `json:"ssh_url"`
 	HTTPURL     string    `json:"http_url"`
 	WebURL      string    `json:"web_url"`
@@ -58,7 +68,6 @@ type ListProjectResponse struct {
 
 type UpdateProjectRequest struct {
 	ID          int32   `json:"id" uri:"id" binding:"required"`
-	Pid         int32   `json:"pid" binding:"required"`
 	Name        *string `json:"name"`
 	SSHURL      *string `json:"ssh_url"`
 	HTTPURL     *string `json:"http_url"`

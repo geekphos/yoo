@@ -74,8 +74,7 @@ func installRouters(g *gin.Engine) error {
 		{
 			projectv1.GET("/:id", pc.Get)
 			projectv1.GET("", pc.List)
-			projectv1.GET("/categories", pc.Categories)
-			projectv1.GET("/tags", pc.Tags)
+			projectv1.GET("/all", pc.All)
 
 			projectv1.Use(mw.Auth())
 			projectv1.POST("", pc.Create)
@@ -106,7 +105,7 @@ func installRouters(g *gin.Engine) error {
 
 			taskv1.Use(mw.Auth())
 			taskv1.POST("", tsc.Create)
-			taskv1.DELETE("/:id", tsc.Delete)
+			taskv1.DELETE("/:pids", tsc.Delete)
 		}
 
 		// 创建 actions 路由分组

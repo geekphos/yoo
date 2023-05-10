@@ -1,8 +1,11 @@
 # 通用配置
 runmode: debug               # Gin 开发模式, 可选值有：debug, release, test
 jwt-secret: Rtg8BPKNEf2mB4mgvKONGPZZQSaJWNLijxR42qRgq0iBb5 # JWT 密钥
-gitlab-token: KzcHBEHyiZBn4uiEdW_B
-gitlab-server: http://192.168.31.162:8080
+
+gitlab:
+  token: KzcHBEHyiZBn4uiEdW_B
+  server: http://192.168.31.162:8080
+  namespace: 53
 
 # MySQL 数据库相关配置
 db:

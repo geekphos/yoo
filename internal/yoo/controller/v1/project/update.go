@@ -1,6 +1,8 @@
 package project
 
 import (
+	"strconv"
+
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
 
@@ -12,6 +14,15 @@ import (
 
 func (ctrl *ProjectController) Update(c *gin.Context) {
 	var r v1.UpdateProjectRequest
+
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		core.WriteResponse(c, errno.ErrInvalidParameter, nil)
+		return
+	}
+
+	r.ID = int32(id)
+
 	if err := c.ShouldBindJSON(&r); err != nil {
 		if errs, ok := err.(validator.ValidationErrors); ok {
 			core.WriteResponse(c, errno.ErrInvalidParameter.SetMessage(veldt.Translate(errs)), nil)

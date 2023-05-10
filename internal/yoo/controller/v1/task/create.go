@@ -11,9 +11,9 @@ import (
 )
 
 func (ctrl *TaskController) Create(c *gin.Context) {
-	var r *v1.CreateTaskRequest
+	var r []*v1.CreateTaskRequest
 
-	if err := c.ShouldBindJSON(&r); err != nil {
+	if err := c.ShouldBind(&r); err != nil {
 		if errs, ok := err.(validator.ValidationErrors); ok {
 			core.WriteResponse(c, errno.ErrInvalidParameter.SetMessage(veldt.Translate(errs)), nil)
 		} else {

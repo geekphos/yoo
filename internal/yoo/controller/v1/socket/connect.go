@@ -2,8 +2,9 @@ package socket
 
 import (
 	"net/http"
-	"phos.cc/yoo/internal/yoo/socket_client"
 	"strings"
+
+	"phos.cc/yoo/internal/yoo/socket_client"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"

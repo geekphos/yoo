@@ -30,16 +30,16 @@ type UpdateTaskRequest struct {
 }
 
 type ListTaskRequest struct {
-	Page      int `query:"page" binding:"required" default:"1"`
-	PageSize  int `query:"page_size" binding:"required" default:"10"`
-	PlanID    int `query:"plan_id" binding:"required"`
-	Status    int `query:"status" binding:"omitempty"`
-	ProjectID int `query:"project_id" binding:"gte=1,omitempty"`
+	Page      int `form:"page" binding:"required" default:"1"`
+	PageSize  int `form:"page_size" binding:"required" default:"10"`
+	PlanID    int `form:"plan_id" binding:"required"`
+	Status    int `form:"status" binding:"omitempty"`
+	ProjectID int `form:"project_id" binding:"gte=1,omitempty"`
 }
 
 type AllTaskRequest struct {
-	PlanID int `query:"plan_id" binding:"required"`
-	Status int `query:"status" binding:"omitempty"`
+	PlanID int `form:"plan_id" binding:"required"`
+	Status int `form:"status" binding:"omitempty"`
 }
 
 type AllTaskResponse struct {
