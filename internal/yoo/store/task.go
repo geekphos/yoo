@@ -49,7 +49,7 @@ func (p *tasks) GetByPid(ctx context.Context, pid int32) ([]*model.TaskM, error)
 }
 
 func (p *tasks) Update(ctx context.Context, task *model.TaskM) error {
-	return p.db.WithContext(ctx).Updates(task).Error
+	return p.db.WithContext(ctx).Save(task).Error
 }
 
 func (p *tasks) List(ctx context.Context, page, pageSize int, task *model.TaskM) ([]*model.TaskM, int64, error) {

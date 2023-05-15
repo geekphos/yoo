@@ -54,7 +54,9 @@ func (b *taskBiz) Create(ctx context.Context, r []*v1.CreateTaskRequest) error {
 
 func (b *taskBiz) Update(ctx context.Context, r *v1.UpdateTaskRequest, id int32) error {
 	var taskM = &model.TaskM{}
-	_ = copier.Copy(taskM, r)
+	_ = copier.CopyWithOption(taskM, r, copier.Option{
+		IgnoreEmpty: true,
+	})
 	taskM.ID = id
 
 	if err := b.ds.Tasks().Update(ctx, taskM); err != nil {

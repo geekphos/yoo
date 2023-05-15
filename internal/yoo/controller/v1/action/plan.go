@@ -18,13 +18,14 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
+	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/go-playground/validator/v10"
 	"github.com/minio/minio-go/v7"
 	"github.com/mitchellh/go-homedir"
 	"golang.org/x/sync/errgroup"
-	"gopkg.in/src-d/go-git.v4"
-	"gopkg.in/src-d/go-git.v4/plumbing"
 
 	"phos.cc/yoo/internal/pkg/core"
 	"phos.cc/yoo/internal/pkg/errno"
@@ -273,7 +274,7 @@ ALTER TABLE ` + "`category`" + ` ADD FOREIGN KEY (` + "`parent_id`" + `) REFEREN
 							},
 							"msg": "ok",
 						})
-						location, sql, err := runBuildFlow(task, b, c, repos, www, onlyFailed)
+						location, sql, sha1, err := runBuildFlow(task, b, c, repos, www, onlyFailed)
 						if err != nil {
 							b.Tasks().Update(c, &v1.UpdateTaskRequest{Status: 3}, task.ID)
 							socket_client.WriteJSON(email, gin.H{
@@ -294,7 +295,7 @@ ALTER TABLE ` + "`category`" + ` ADD FOREIGN KEY (` + "`parent_id`" + `) REFEREN
 						sqlsb.WriteString(sql)
 
 						// 将任务状态更新成成功
-						b.Tasks().Update(c, &v1.UpdateTaskRequest{Status: 4}, task.ID)
+						b.Tasks().Update(c, &v1.UpdateTaskRequest{Status: 4, Sha1: sha1}, task.ID)
 						socket_client.WriteJSON(email, gin.H{
 							"event": "task",
 							"type":  "success",
@@ -481,10 +482,11 @@ func prepareToExec(pid int32) (string, string, string, error) {
 	return bundles, www, repos, nil
 }
 
-func runBuildFlow(task *v1.ListTaskResponse, b biz.Biz, c context.Context, repos string, www string, onlyFailed bool) (string, string, error) {
+func runBuildFlow(task *v1.ListTaskResponse, b biz.Biz, c context.Context, repos string, www string, onlyFailed bool) (string, string, string, error) {
 	var output string
 	// 是否需要重新构建
 	var needBuild bool
+	var sha1 string
 
 	if task.Status == 3 {
 		needBuild = true
@@ -495,7 +497,7 @@ func runBuildFlow(task *v1.ListTaskResponse, b biz.Biz, c context.Context, repos
 	p, err := b.Projects().Get(c, task.ProjectID)
 	if err != nil {
 		log.Errorw("failed to get project", "project_id", task.ProjectID, "err", err)
-		return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
+		return "", "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
 	}
 
 	location := fmt.Sprintf(`
@@ -510,17 +512,7 @@ func runBuildFlow(task *v1.ListTaskResponse, b biz.Biz, c context.Context, repos
 
 	dir := fmt.Sprintf("%s/%s", repos, p.Name)
 
-	// 如果项目目录不存在，则创建
-	if !isDirExist(dir) {
-		needBuild = true
-		log.Infow("project dir is not exist, need rebuild", "project", p.Name, "dir", dir)
-		log.Debugw("create project dir", "project", p.Name, "dir", dir)
-		if err := mkDir(dir); err != nil {
-			log.Errorw("create project dir", "project", p.Name, "err", err)
-			return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
-		}
-	}
-
+	// 比较 git 提交记录，判断是否需要执行构建
 	// 优先使用 ssh url
 	var repo string
 	if p.SSHURL != "" {
@@ -532,132 +524,67 @@ func runBuildFlow(task *v1.ListTaskResponse, b biz.Biz, c context.Context, repos
 	homeDir, err := homedir.Dir()
 	if err != nil {
 		log.Errorw("get home dir", "project", p.Name, "err", err)
-		return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
+		return "", "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
 	}
 
 	publicKeys, err := ssh.NewPublicKeysFromFile("git", fmt.Sprintf("%s/.ssh/id_ed25519", homeDir), "")
 	if err != nil {
 		log.Errorw("get public keys failed", "project", p.Name, "err", err)
-		return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
+		return "", "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
 	}
 
-	// 检查当前目录是否为 git 目录
-	gitRepo, err := git.PlainOpen(dir)
+	rem := git.NewRemote(memory.NewStorage(), &config.RemoteConfig{
+		Name: "origin",
+		URLs: []string{repo},
+	})
 
-	// 如果不是 git 仓库
+	refs, err := rem.List(&git.ListOptions{
+		Auth: publicKeys,
+	})
+
 	if err != nil {
+		log.Errorw("list remote failed", "project", p.Name, "err", err)
+		return "", "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
+	}
+
+	for _, ref := range refs {
+		if ref.Name().String() == "refs/heads/master" {
+			sha1 = ref.Hash().String()
+			break
+		}
+	}
+
+	// 如果 task 中记录的 sha1 和 git 上项目对应的 sha1 不匹配，则需要执行打包
+	if sha1 != task.Sha1 {
 		needBuild = true
-		log.Infow("repo is not exist, need rebuild", "project", p.Name, "dir", dir)
-		// 检查目录是否为空
-		empty, err := isDirEmpty(dir)
-		if err != nil {
-			log.Errorw("check dir is empty", "project", p.Name, "err", err)
-			return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
-		}
+	}
 
-		// 如果目录不为空，删除并重建目录
-		if !empty {
-			if err := removeDir(dir); err != nil {
-				log.Errorw("remove dir", "project", p.Name, "err", err)
-				return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
-			}
-			if err := mkDir(dir); err != nil {
-				log.Errorw("create dir", "project", p.Name, "err", err)
-				return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
-			}
-		}
+	// 如果有新代码，或者上次构建中失败，则需要重新构建打包项目
+	if needBuild || task.Status == 3 {
+		// 删除项目目录
+		removeDir(dir)
 
-		// 克隆项目
-		gitRepo, err = git.PlainClone(dir, false, &git.CloneOptions{
+		// 重新克隆项目
+		_, err := git.PlainClone(dir, false, &git.CloneOptions{
 			Auth: publicKeys,
 			URL:  repo,
 		})
-
 		if err != nil {
-			log.Errorw("clone project", "project", p.Name, "err", err)
-			return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
+			log.Errorw("project clone failed", "project", p.Name, "err", err)
+			return "", "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
 		}
 
-	}
-
-	// 检查 master 分支是不是最新的
-	// git ls-remote origin master
-	// git.NewRemote()
-
-	hl, err := gitRepo.ResolveRevision(plumbing.Revision("master"))
-	if err != nil {
-		log.Errorw("resolve revision failed", "project", p.Name, "err", err)
-		return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
-	}
-	remote, err := gitRepo.Remote("origin")
-	if err != nil {
-		log.Errorw("get remote failed", "project", p.Name, "err", err)
-		return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
-	}
-	refs, err := remote.List(&git.ListOptions{
-		Auth: publicKeys,
-	})
-	if err != nil {
-		log.Errorw("list remote failed", "project", p.Name, "err", err)
-		return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
-	}
-
-	var hr string
-	for _, ref := range refs {
-		if ref.Name().String() == "refs/heads/master" {
-			hr = ref.Hash().String()
-		}
-	}
-
-	var needUpdate bool
-
-	if hr != "" && hl.String() != hr {
-		needUpdate = true
-	}
-
-	// 如果需要更新代码，则执行 git pull
-	if needUpdate {
-		needBuild = true
-		log.Infow("project is out of date, need rebuild", "project", p.Name)
-		w, err := gitRepo.Worktree()
-		if err != nil {
-			log.Errorw("get worktree failed", "project", p.Name, "err", err)
-			return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
-		}
-		err = w.Pull(&git.PullOptions{
-			RemoteName: "origin",
-		})
-		if err != nil {
-			log.Errorw("pull remote repo", "project", p.Name, "err", err)
-			return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
-		}
-	} else {
-		log.Debugw("project is up to date", "project", p.Name)
-	}
-
-	ref, err := gitRepo.Head()
-	if err != nil {
-		log.Errorw("get head failed", "project", p.Name, "err", err)
-		return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
-	}
-	log.Debugw("get head", "project", p.Name, "ref", ref)
-	commit, err := gitRepo.CommitObject(ref.Hash())
-	if err != nil {
-		log.Errorw("get commit failed", "project", p.Name, "err", err)
-		return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
-	}
-
-	log.Debugw("get commit", "project", p.Name, "commit", commit)
-
-	if needBuild {
+		// 安装依赖
 		if output, err = installDeps(dir); err != nil {
+
 			log.Errorw("install dependencies failed", "project", p.Name, "err", err, "output", string(output))
-			return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
+			return "", "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
 		}
 
+		// 执行打包
 		if output, err = buildProject(dir, p.BuildCmd); err != nil {
 			log.Errorw("build project failed", "project", p.Name, "err", err, "output", string(output))
-			return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
+			return "", "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
 		}
 
 		// 拷贝打包出的文件至 www 下
@@ -666,11 +593,155 @@ func runBuildFlow(task *v1.ListTaskResponse, b biz.Biz, c context.Context, repos
 
 		if err := copyDir(src, dst); err != nil {
 			log.Errorw("copy dir failed", "project", p.Name, "err", err)
-			return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
+			return "", "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
 		}
+
+		// 更新 task 的 sha1 值
 	}
 
-	return location, sql, nil
+	return location, sql, sha1, nil
+
+	// // 如果项目目录不存在，则创建
+	// if !isDirExist(dir) {
+	// 	needBuild = true
+	// 	log.Infow("project dir is not exist, need rebuild", "project", p.Name, "dir", dir)
+	// 	log.Debugw("create project dir", "project", p.Name, "dir", dir)
+	// 	if err := mkDir(dir); err != nil {
+	// 		log.Errorw("create project dir", "project", p.Name, "err", err)
+	// 		return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
+	// 	}
+	// }
+
+	// // 检查当前目录是否为 git 目录
+	// gitRepo, err := git.PlainOpen(dir)
+
+	// // 如果不是 git 仓库
+	// if err != nil {
+	// 	needBuild = true
+	// 	log.Infow("repo is not exist, need rebuild", "project", p.Name, "dir", dir)
+	// 	// 检查目录是否为空
+	// 	empty, err := isDirEmpty(dir)
+	// 	if err != nil {
+	// 		log.Errorw("check dir is empty", "project", p.Name, "err", err)
+	// 		return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
+	// 	}
+
+	// 	// 如果目录不为空，删除并重建目录
+	// 	if !empty {
+	// 		if err := removeDir(dir); err != nil {
+	// 			log.Errorw("remove dir", "project", p.Name, "err", err)
+	// 			return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
+	// 		}
+	// 		if err := mkDir(dir); err != nil {
+	// 			log.Errorw("create dir", "project", p.Name, "err", err)
+	// 			return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
+	// 		}
+	// 	}
+
+	// 	// 克隆项目
+	// 	gitRepo, err = git.PlainClone(dir, false, &git.CloneOptions{
+	// 		Auth: publicKeys,
+	// 		URL:  repo,
+	// 	})
+
+	// 	if err != nil {
+	// 		log.Errorw("clone project", "project", p.Name, "err", err)
+	// 		return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
+	// 	}
+
+	// }
+
+	// // 检查 master 分支是不是最新的
+	// // git ls-remote origin master
+	// // git.NewRemote()
+
+	// hl, err := gitRepo.ResolveRevision(plumbing.Revision("master"))
+	// if err != nil {
+	// 	log.Errorw("resolve revision failed", "project", p.Name, "err", err)
+	// 	return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
+	// }
+	// remote, err := gitRepo.Remote("origin")
+	// if err != nil {
+	// 	log.Errorw("get remote failed", "project", p.Name, "err", err)
+	// 	return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
+	// }
+	// refs, err := remote.List(&git.ListOptions{
+	// 	Auth: publicKeys,
+	// })
+	// if err != nil {
+	// 	log.Errorw("list remote failed", "project", p.Name, "err", err)
+	// 	return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
+	// }
+
+	// var hr string
+	// for _, ref := range refs {
+	// 	if ref.Name().String() == "refs/heads/master" {
+	// 		hr = ref.Hash().String()
+	// 	}
+	// }
+
+	// var needUpdate bool
+
+	// if hr != "" && hl.String() != hr {
+	// 	needUpdate = true
+	// }
+
+	// // 如果需要更新代码，则执行 git pull
+	// if needUpdate {
+	// 	needBuild = true
+	// 	log.Infow("project is out of date, need rebuild", "project", p.Name)
+	// 	w, err := gitRepo.Worktree()
+	// 	if err != nil {
+	// 		log.Errorw("get worktree failed", "project", p.Name, "err", err)
+	// 		return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
+	// 	}
+	// 	err = w.Pull(&git.PullOptions{
+	// 		RemoteName: "origin",
+	// 	})
+	// 	if err != nil {
+	// 		log.Errorw("pull remote repo", "project", p.Name, "err", err)
+	// 		return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
+	// 	}
+	// } else {
+	// 	log.Debugw("project is up to date", "project", p.Name)
+	// }
+
+	// ref, err := gitRepo.Head()
+	// if err != nil {
+	// 	log.Errorw("get head failed", "project", p.Name, "err", err)
+	// 	return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
+	// }
+	// log.Debugw("get head", "project", p.Name, "ref", ref)
+	// commit, err := gitRepo.CommitObject(ref.Hash())
+	// if err != nil {
+	// 	log.Errorw("get commit failed", "project", p.Name, "err", err)
+	// 	return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
+	// }
+
+	// log.Debugw("get commit", "project", p.Name, "commit", commit)
+
+	// if needBuild {
+	// 	if output, err = installDeps(dir); err != nil {
+	// 		log.Errorw("install dependencies failed", "project", p.Name, "err", err, "output", string(output))
+	// 		return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
+	// 	}
+
+	// 	if output, err = buildProject(dir, p.BuildCmd); err != nil {
+	// 		log.Errorw("build project failed", "project", p.Name, "err", err, "output", string(output))
+	// 		return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
+	// 	}
+
+	// 	// 拷贝打包出的文件至 www 下
+	// 	src := fmt.Sprintf("%s/%s", dir, p.Dist)
+	// 	dst := fmt.Sprintf("%s/%s", www, p.Name)
+
+	// 	if err := copyDir(src, dst); err != nil {
+	// 		log.Errorw("copy dir failed", "project", p.Name, "err", err)
+	// 		return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
+	// 	}
+	// }
+
+	// return location, sql, nil
 }
 
 // checkDir 检查目录是否存在，不存在则创建

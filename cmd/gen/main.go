@@ -11,7 +11,7 @@ import (
 
 // Dynamic SQL
 
-const dsn = "root:yotoo123qwe@tcp(localhost:3306)/yoo?charset=utf8mb4&parseTime=True&loc=Local"
+const dsn = "root:yotoo123qwe@tcp(192.168.31.120:3306)/yoo?charset=utf8mb4&parseTime=True&loc=Local"
 
 func main() {
 	g := gen.NewGenerator(gen.Config{
@@ -28,6 +28,7 @@ func main() {
 	g.GenerateModelAs("users", "UserM")
 	g.GenerateModelAs("plans", "PlanM")
 	g.GenerateModelAs("projects", "ProjectM", gen.FieldType("tags", "datatypes.JSON"))
+	g.GenerateModelAs("tasks", "TaskM")
 
 	g.Execute()
 }

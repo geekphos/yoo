@@ -16,6 +16,7 @@ type TaskM struct {
 	PlanID    int32     `gorm:"column:plan_id;not null" json:"plan_id"`
 	Status    int32     `gorm:"column:status;default:1" json:"status"` // 任务状态: 1 空闲, 2 进行中, 3 失败, 4 成功
 	ProjectID int32     `gorm:"column:project_id;not null" json:"project_id"`
+	Sha1      string    `gorm:"column:sha1" json:"sha1"` // 上次任务执行时，对应项目 git 的 sha1，用于比较是否需要重新打包
 	CreatedAt time.Time `gorm:"column:created_at;not null" json:"created_at"`
 	UpdatedAt time.Time `gorm:"column:updated_at;not null" json:"updated_at"`
 }
