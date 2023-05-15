@@ -53,11 +53,14 @@ func (b *taskBiz) Create(ctx context.Context, r []*v1.CreateTaskRequest) error {
 }
 
 func (b *taskBiz) Update(ctx context.Context, r *v1.UpdateTaskRequest, id int32) error {
-	var taskM = &model.TaskM{}
+	taskM, err := b.ds.Tasks().Get(ctx, id)
+	if err != nil {
+		return errno.ErrTaskNotFound
+	}
+
 	_ = copier.CopyWithOption(taskM, r, copier.Option{
 		IgnoreEmpty: true,
 	})
-	taskM.ID = id
 
 	if err := b.ds.Tasks().Update(ctx, taskM); err != nil {
 		return errno.InternalServerError
@@ -100,7 +103,7 @@ func (b *taskBiz) List(ctx context.Context, r *v1.ListTaskRequest) ([]*v1.ListTa
 	taskM := &model.TaskM{}
 	_ = copier.Copy(taskM, r)
 
-	taskMs, total, err := b.ds.Tasks().List(ctx, r.Page, r.PageSize, taskM)
+	taskMs, total, err := b.ds.Tasks().List(ctx, int(r.Page), r.PageSize, taskM)
 	if err != nil {
 		return nil, 0, errno.InternalServerError
 	}

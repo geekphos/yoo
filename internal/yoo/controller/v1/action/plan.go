@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -25,7 +26,6 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/minio/minio-go/v7"
 	"github.com/mitchellh/go-homedir"
-	"golang.org/x/sync/errgroup"
 
 	"phos.cc/yoo/internal/pkg/core"
 	"phos.cc/yoo/internal/pkg/errno"
@@ -39,6 +39,8 @@ import (
 )
 
 const CACHE_ROOT = "/opt/web/ci/.yoo"
+
+// const CACHE_ROOT = "/tmp/.yoo"
 
 type TaskErr struct {
 	Message string
@@ -141,11 +143,11 @@ func execPlan(c context.Context, b biz.Biz, pid int32, gid int32, onlyFailed boo
 		return
 	}
 
-	r := &v1.ListTaskRequest{
-		Page:     1,
-		PageSize: 5, // 打包速度基本和磁盘性能有关系，故此只开启 5 个协程
-		PlanID:   int(pid),
-	}
+	// r := &v1.ListTaskRequest{
+	// 	Page:     1,
+	// 	PageSize: 10, // 打包速度基本和磁盘性能有关系，故此只开启 5 个协程
+	// 	PlanID:   int(pid),
+	// }
 
 	var nginxsb strings.Builder
 	var sqlsb strings.Builder
@@ -229,91 +231,89 @@ CREATE TABLE ` + "`category`" + ` (
 ALTER TABLE ` + "`category`" + ` ADD FOREIGN KEY (` + "`parent_id`" + `) REFERENCES ` + "`category`" + ` (` + "`id`" + `);
 `)
 
-	for int64((r.Page-1)*r.PageSize) < total {
-		var list []*v1.ListTaskResponse
-		var err error
-		list, total, err = b.Tasks().List(c, r)
-		if err != nil {
-			log.Errorw("list task", "err", err)
-			socket_client.WriteJSON(email, gin.H{
-				"event": "plan",
-				"type":  "error",
-				"msg":   err.Error(),
-			})
-			return
-		}
-		r.Page += 1
-		g, ctx := errgroup.WithContext(context.Background())
-		for _, task := range list {
-			func(task *v1.ListTaskResponse) {
-				g.Go(func() error {
-					select {
-					case <-ctx.Done():
-						// 将任务状态更新成失败
-						b.Tasks().Update(c, &v1.UpdateTaskRequest{Status: 3}, task.ID)
-						socket_client.WriteJSON(email, gin.H{
-							"event": "task",
-							"type":  "error",
-							"data": gin.H{
-								"id":     task.ID,
-								"status": 3,
-							},
-							"msg": "ok",
-						})
-						return ctx.Err()
-					default:
-						// 将任务状态更新成 执行中
-						b.Tasks().Update(c, &v1.UpdateTaskRequest{Status: 2}, task.ID)
-						// 通过 websocket 发送消息
-						socket_client.WriteJSON(email, gin.H{
-							"event": "task",
-							"type":  "info",
-							"data": gin.H{
-								"id":     task.ID,
-								"status": 2,
-							},
-							"msg": "ok",
-						})
-						location, sql, sha1, err := runBuildFlow(task, b, c, repos, www, onlyFailed)
-						if err != nil {
-							b.Tasks().Update(c, &v1.UpdateTaskRequest{Status: 3}, task.ID)
-							socket_client.WriteJSON(email, gin.H{
-								"event": "task",
-								"type":  "error",
-								"data": gin.H{
-									"id":     task.ID,
-									"status": 3,
-								},
-								"msg": "ok",
-							})
-							atomic.AddUint32(&failed, 1)
-							return err
-						}
+	// 创建 task 队列
+	taskCh := make(chan *v1.AllTaskResponse, 10)
 
-						nginxsb.WriteString(location)
+	list, err := b.Tasks().All(c, &v1.AllTaskRequest{
+		PlanID: int(pid),
+	})
+	if err != nil {
+		log.Errorw("list task failed", "err", err)
+		socket_client.WriteJSON(email, gin.H{
+			"event": "plan",
+			"type":  "error",
+			"msg":   err.Error(),
+		})
+		return
 
-						sqlsb.WriteString(sql)
-
-						// 将任务状态更新成成功
-						b.Tasks().Update(c, &v1.UpdateTaskRequest{Status: 4, Sha1: sha1}, task.ID)
-						socket_client.WriteJSON(email, gin.H{
-							"event": "task",
-							"type":  "success",
-							"data": gin.H{
-								"id":     task.ID,
-								"status": 4,
-							},
-							"msg": "ok",
-						})
-						atomic.AddUint32(&succeed, 1)
-						return nil
-					}
-				})
-			}(task)
-		}
-		// 等待任务执行
-		_ = g.Wait()
 	}
+
+	var wg sync.WaitGroup
+
+	// 限制携程数量为 5
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for t := range taskCh {
+				// 执行构建任务
+				reaseon := ""
+				// 将任务状态更新成 执行中
+				b.Tasks().Update(c, &v1.UpdateTaskRequest{Status: 2, FailedReason: &reaseon}, t.ID)
+				// 通过 websocket 发送消息
+				socket_client.WriteJSON(email, gin.H{
+					"event": "task",
+					"type":  "info",
+					"data": gin.H{
+						"id":     t.ID,
+						"status": 2,
+					},
+					"msg": "ok",
+				})
+				location, sql, sha1, err := runBuildFlow(t, b, c, repos, www, onlyFailed)
+				if err != nil {
+					reason := err.Error()
+					b.Tasks().Update(c, &v1.UpdateTaskRequest{Status: 3, FailedReason: &reason}, t.ID)
+					socket_client.WriteJSON(email, gin.H{
+						"event": "task",
+						"type":  "error",
+						"data": gin.H{
+							"id":     t.ID,
+							"status": 3,
+						},
+						"msg": "ok",
+					})
+					atomic.AddUint32(&failed, 1)
+				} else {
+					nginxsb.WriteString(location)
+
+					sqlsb.WriteString(sql)
+
+					reason := ""
+					// 将任务状态更新成成功
+					b.Tasks().Update(c, &v1.UpdateTaskRequest{Status: 4, Sha1: &sha1, FailedReason: &reason}, t.ID)
+					socket_client.WriteJSON(email, gin.H{
+						"event": "task",
+						"type":  "success",
+						"data": gin.H{
+							"id":     t.ID,
+							"status": 4,
+						},
+						"msg": "ok",
+					})
+					atomic.AddUint32(&succeed, 1)
+				}
+
+			}
+		}()
+	}
+
+	for _, t := range list {
+		taskCh <- t
+	}
+
+	close(taskCh)
+	wg.Wait()
 
 	nginxsb.WriteString(`
 	error_page   500 502 503 504  /50x.html;
@@ -482,7 +482,7 @@ func prepareToExec(pid int32) (string, string, string, error) {
 	return bundles, www, repos, nil
 }
 
-func runBuildFlow(task *v1.ListTaskResponse, b biz.Biz, c context.Context, repos string, www string, onlyFailed bool) (string, string, string, error) {
+func runBuildFlow(task *v1.AllTaskResponse, b biz.Biz, c context.Context, repos string, www string, onlyFailed bool) (string, string, string, error) {
 	var output string
 	// 是否需要重新构建
 	var needBuild bool
@@ -578,13 +578,13 @@ func runBuildFlow(task *v1.ListTaskResponse, b biz.Biz, c context.Context, repos
 		if output, err = installDeps(dir); err != nil {
 
 			log.Errorw("install dependencies failed", "project", p.Name, "err", err, "output", string(output))
-			return "", "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
+			return "", "", "", TaskErr{TaskID: task.ID, Message: output}
 		}
 
 		// 执行打包
 		if output, err = buildProject(dir, p.BuildCmd); err != nil {
 			log.Errorw("build project failed", "project", p.Name, "err", err, "output", string(output))
-			return "", "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
+			return "", "", "", TaskErr{TaskID: task.ID, Message: output}
 		}
 
 		// 拷贝打包出的文件至 www 下
@@ -596,152 +596,15 @@ func runBuildFlow(task *v1.ListTaskResponse, b biz.Biz, c context.Context, repos
 			return "", "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
 		}
 
-		// 更新 task 的 sha1 值
+		// 删除项目目录
+		if err := removeDir(dir); err != nil {
+			log.Errorw("cleanup project dir failed", "project", p.Name, "err", err)
+			return "", "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
+		}
 	}
 
 	return location, sql, sha1, nil
 
-	// // 如果项目目录不存在，则创建
-	// if !isDirExist(dir) {
-	// 	needBuild = true
-	// 	log.Infow("project dir is not exist, need rebuild", "project", p.Name, "dir", dir)
-	// 	log.Debugw("create project dir", "project", p.Name, "dir", dir)
-	// 	if err := mkDir(dir); err != nil {
-	// 		log.Errorw("create project dir", "project", p.Name, "err", err)
-	// 		return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
-	// 	}
-	// }
-
-	// // 检查当前目录是否为 git 目录
-	// gitRepo, err := git.PlainOpen(dir)
-
-	// // 如果不是 git 仓库
-	// if err != nil {
-	// 	needBuild = true
-	// 	log.Infow("repo is not exist, need rebuild", "project", p.Name, "dir", dir)
-	// 	// 检查目录是否为空
-	// 	empty, err := isDirEmpty(dir)
-	// 	if err != nil {
-	// 		log.Errorw("check dir is empty", "project", p.Name, "err", err)
-	// 		return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
-	// 	}
-
-	// 	// 如果目录不为空，删除并重建目录
-	// 	if !empty {
-	// 		if err := removeDir(dir); err != nil {
-	// 			log.Errorw("remove dir", "project", p.Name, "err", err)
-	// 			return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
-	// 		}
-	// 		if err := mkDir(dir); err != nil {
-	// 			log.Errorw("create dir", "project", p.Name, "err", err)
-	// 			return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
-	// 		}
-	// 	}
-
-	// 	// 克隆项目
-	// 	gitRepo, err = git.PlainClone(dir, false, &git.CloneOptions{
-	// 		Auth: publicKeys,
-	// 		URL:  repo,
-	// 	})
-
-	// 	if err != nil {
-	// 		log.Errorw("clone project", "project", p.Name, "err", err)
-	// 		return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
-	// 	}
-
-	// }
-
-	// // 检查 master 分支是不是最新的
-	// // git ls-remote origin master
-	// // git.NewRemote()
-
-	// hl, err := gitRepo.ResolveRevision(plumbing.Revision("master"))
-	// if err != nil {
-	// 	log.Errorw("resolve revision failed", "project", p.Name, "err", err)
-	// 	return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
-	// }
-	// remote, err := gitRepo.Remote("origin")
-	// if err != nil {
-	// 	log.Errorw("get remote failed", "project", p.Name, "err", err)
-	// 	return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
-	// }
-	// refs, err := remote.List(&git.ListOptions{
-	// 	Auth: publicKeys,
-	// })
-	// if err != nil {
-	// 	log.Errorw("list remote failed", "project", p.Name, "err", err)
-	// 	return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
-	// }
-
-	// var hr string
-	// for _, ref := range refs {
-	// 	if ref.Name().String() == "refs/heads/master" {
-	// 		hr = ref.Hash().String()
-	// 	}
-	// }
-
-	// var needUpdate bool
-
-	// if hr != "" && hl.String() != hr {
-	// 	needUpdate = true
-	// }
-
-	// // 如果需要更新代码，则执行 git pull
-	// if needUpdate {
-	// 	needBuild = true
-	// 	log.Infow("project is out of date, need rebuild", "project", p.Name)
-	// 	w, err := gitRepo.Worktree()
-	// 	if err != nil {
-	// 		log.Errorw("get worktree failed", "project", p.Name, "err", err)
-	// 		return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
-	// 	}
-	// 	err = w.Pull(&git.PullOptions{
-	// 		RemoteName: "origin",
-	// 	})
-	// 	if err != nil {
-	// 		log.Errorw("pull remote repo", "project", p.Name, "err", err)
-	// 		return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
-	// 	}
-	// } else {
-	// 	log.Debugw("project is up to date", "project", p.Name)
-	// }
-
-	// ref, err := gitRepo.Head()
-	// if err != nil {
-	// 	log.Errorw("get head failed", "project", p.Name, "err", err)
-	// 	return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
-	// }
-	// log.Debugw("get head", "project", p.Name, "ref", ref)
-	// commit, err := gitRepo.CommitObject(ref.Hash())
-	// if err != nil {
-	// 	log.Errorw("get commit failed", "project", p.Name, "err", err)
-	// 	return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
-	// }
-
-	// log.Debugw("get commit", "project", p.Name, "commit", commit)
-
-	// if needBuild {
-	// 	if output, err = installDeps(dir); err != nil {
-	// 		log.Errorw("install dependencies failed", "project", p.Name, "err", err, "output", string(output))
-	// 		return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
-	// 	}
-
-	// 	if output, err = buildProject(dir, p.BuildCmd); err != nil {
-	// 		log.Errorw("build project failed", "project", p.Name, "err", err, "output", string(output))
-	// 		return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
-	// 	}
-
-	// 	// 拷贝打包出的文件至 www 下
-	// 	src := fmt.Sprintf("%s/%s", dir, p.Dist)
-	// 	dst := fmt.Sprintf("%s/%s", www, p.Name)
-
-	// 	if err := copyDir(src, dst); err != nil {
-	// 		log.Errorw("copy dir failed", "project", p.Name, "err", err)
-	// 		return "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
-	// 	}
-	// }
-
-	// return location, sql, nil
 }
 
 // checkDir 检查目录是否存在，不存在则创建
@@ -1049,12 +912,12 @@ func uploadFiles(ctx context.Context, bucketName, objectPrefix, filePath string)
 
 func cleanYarnCache() {
 	cmd := exec.Command("yarn", "cache", "clean")
-	log.Infow("exec command", "cmd", cmd.String())
+	log.Debugw("exec command", "cmd", cmd.String())
 	cmd.Output()
 }
 
 func execCommand(cmd *exec.Cmd) (string, error) {
-	log.Infow("exec command", "cmd", cmd.String())
+	log.Debugw("exec command", "cmd", cmd.String())
 	msg, err := cmd.CombinedOutput()
 
 	return fmt.Sprintf("output: %s", msg), err
