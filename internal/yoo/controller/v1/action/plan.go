@@ -38,9 +38,9 @@ import (
 	v1 "phos.cc/yoo/pkg/api/yoo/v1"
 )
 
-const CACHE_ROOT = "/opt/web/ci/.yoo"
+// const CACHE_ROOT = "/opt/web/ci/.yoo"
 
-// const CACHE_ROOT = "/tmp/.yoo"
+const CACHE_ROOT = "/tmp/.yoo"
 
 type TaskErr struct {
 	Message string
@@ -557,10 +557,11 @@ func runBuildFlow(task *v1.AllTaskResponse, b biz.Biz, c context.Context, repos 
 	// 如果 task 中记录的 sha1 和 git 上项目对应的 sha1 不匹配，则需要执行打包
 	if sha1 != task.Sha1 {
 		needBuild = true
+		log.Errorw("代码有更新，需要重新打包", "project", p.Name)
 	}
 
-	// 如果有新代码，或者上次构建中失败，则需要重新构建打包项目
-	if needBuild || task.Status == 3 {
+	// 如果需要重新构建
+	if needBuild {
 		// 删除项目目录
 		removeDir(dir)
 
