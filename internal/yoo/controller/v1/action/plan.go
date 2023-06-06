@@ -2,7 +2,9 @@ package action
 
 import (
 	"archive/zip"
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
@@ -38,9 +40,9 @@ import (
 	v1 "phos.cc/yoo/pkg/api/yoo/v1"
 )
 
-// const CACHE_ROOT = "/opt/web/ci/.yoo"
+const CACHE_ROOT = "/opt/web/ci/.yoo"
 
-const CACHE_ROOT = "/tmp/.yoo"
+//const CACHE_ROOT = "/tmp/.yoo"
 
 type TaskErr struct {
 	Message string
@@ -210,6 +212,7 @@ CREATE TABLE ` + "`menus`" + ` (
   ` + "`parent_id`" + ` int COMMENT '父级菜单 id, 若为根目录, 则为空',
   ` + "`number`" + ` int NOT NULL COMMENT '菜单顺序编号',
   ` + "`categories`" + ` json COMMENT '分类 id 列表',
+  ` + "`description`" + ` varchar(255) NOT NULL COMMENT '描述',
   ` + "`created_at`" + ` timestamp NOT NULL,
   ` + "`updated_at`" + ` timestamp NOT NULL
 );
@@ -220,7 +223,7 @@ ALTER TABLE ` + "`menus`" + `
 ALTER TABLE ` + "`menus`" + `
     ADD FOREIGN KEY (` + "`parent_id`" + `) REFERENCES ` + "`menus`" + ` (` + "`id`" + `);
 
-CREATE TABLE ` + "`category`" + ` (
+CREATE TABLE ` + "`categories`" + ` (
   ` + "`id`" + ` int PRIMARY KEY AUTO_INCREMENT,
   ` + "`name`" + ` varchar(255) NOT NULL COMMENT '名称',
   ` + "`parent_id`" + ` int COMMENT '父级 id',
@@ -228,7 +231,7 @@ CREATE TABLE ` + "`category`" + ` (
   ` + "`updated_at`" + ` timestamp NOT NULL
 );
 
-ALTER TABLE ` + "`category`" + ` ADD FOREIGN KEY (` + "`parent_id`" + `) REFERENCES ` + "`category`" + ` (` + "`id`" + `);
+ALTER TABLE ` + "`categories`" + ` ADD FOREIGN KEY (` + "`parent_id`" + `) REFERENCES ` + "`categories`" + ` (` + "`id`" + `);
 `)
 
 	// 创建 task 队列
@@ -257,9 +260,10 @@ ALTER TABLE ` + "`category`" + ` ADD FOREIGN KEY (` + "`parent_id`" + `) REFEREN
 			defer wg.Done()
 			for t := range taskCh {
 				// 执行构建任务
-				reaseon := ""
+				// 任务失败的原因
+				reason := ""
 				// 将任务状态更新成 执行中
-				b.Tasks().Update(c, &v1.UpdateTaskRequest{Status: 2, FailedReason: &reaseon}, t.ID)
+				b.Tasks().Update(c, &v1.UpdateTaskRequest{Status: 2, FailedReason: &reason}, t.ID)
 				// 通过 websocket 发送消息
 				socket_client.WriteJSON(email, gin.H{
 					"event": "task",
@@ -286,7 +290,6 @@ ALTER TABLE ` + "`category`" + ` ADD FOREIGN KEY (` + "`parent_id`" + `) REFEREN
 					atomic.AddUint32(&failed, 1)
 				} else {
 					nginxsb.WriteString(location)
-
 					sqlsb.WriteString(sql)
 
 					reason := ""
@@ -303,7 +306,6 @@ ALTER TABLE ` + "`category`" + ` ADD FOREIGN KEY (` + "`parent_id`" + `) REFEREN
 					})
 					atomic.AddUint32(&succeed, 1)
 				}
-
 			}
 		}()
 	}
@@ -327,28 +329,28 @@ ALTER TABLE ` + "`category`" + ` ADD FOREIGN KEY (` + "`parent_id`" + `) REFEREN
 	// sqlsb.WriteString("\nINSERT INTO menus (`name`, `menu_type`, `href`, `number`, `created_at`, `updated_at`) values ('前端资源', 1, '/resource', 1, NOW(), NOW());\nINSERT INTO menus (`name`, `menu_type`, `href`, `number`, `resource_id`, `parent_id`, `created_at`, `updated_at`) values ('资源管理', 2, '/manage', 1, (select id from resources where resources.name = 'yoo-resource'),(select last_insert_id()), NOW(), NOW())")
 
 	// 在 bundles 目录下生成 default.conf
-	file, err := os.Create(fmt.Sprintf("%s/default.conf", bundles))
-	if err != nil {
-		log.Errorw("create default.conf error", "err", err)
-		return
-	}
-	defer file.Close()
-	if _, err := file.WriteString(nginxsb.String()); err != nil {
-		log.Errorw("write default.conf error", "err", err)
-		return
-	}
+	//file, err := os.Create(fmt.Sprintf("%s/default.conf", bundles))
+	//if err != nil {
+	//	log.Errorw("create default.conf error", "err", err)
+	//	return
+	//}
+	//defer file.Close()
+	//if _, err := file.WriteString(nginxsb.String()); err != nil {
+	//	log.Errorw("write default.conf error", "err", err)
+	//	return
+	//}
 
 	// 在 bundles 目录下生成 sql
-	file, err = os.Create(fmt.Sprintf("%s/init.sql", bundles))
-	if err != nil {
-		log.Errorw("create sql error", "err", err)
-		return
-	}
-	defer file.Close()
-	if _, err := file.WriteString(sqlsb.String()); err != nil {
-		log.Errorw("write sql error", "err", err)
-		return
-	}
+	//file, err := os.Create(fmt.Sprintf("%s/init.sql", bundles))
+	//if err != nil {
+	//	log.Errorw("create sql error", "err", err)
+	//	return
+	//}
+	//defer file.Close()
+	//if _, err := file.WriteString(sqlsb.String()); err != nil {
+	//	log.Errorw("write sql error", "err", err)
+	//	return
+	//}
 
 	// 在 bundles 目录下生成 docker-compose.yml
 	dockersb := `
@@ -387,7 +389,7 @@ services:
     depends_on:
       - yoo-mysql
 `
-	file, err = os.Create(fmt.Sprintf("%s/docker-compose.yml", bundles))
+	file, err := os.Create(fmt.Sprintf("%s/docker-compose.yml", bundles))
 	if err != nil {
 		log.Errorw("create docker-compose.yml error", "err", err)
 		return
@@ -400,11 +402,11 @@ services:
 	}
 
 	// 创建打包产物压缩文件
-	zipFile := fmt.Sprintf("%s/project-%d/bundles.zip", CACHE_ROOT, pid)
-	if err := compressDir(bundles, zipFile); err != nil {
-		log.Errorw("Failed to zip the files")
-		return
-	}
+	//zipFile := fmt.Sprintf("%s/project-%d/bundles.zip", CACHE_ROOT, pid)
+	//if err := compressDir(bundles, zipFile); err != nil {
+	//	log.Errorw("Failed to zip the files")
+	//	return
+	//}
 
 	end := time.Now()
 
@@ -512,6 +514,11 @@ func runBuildFlow(task *v1.AllTaskResponse, b biz.Biz, c context.Context, repos 
 
 	dir := fmt.Sprintf("%s/%s", repos, p.Name)
 
+	// 删除目录
+	defer func() {
+		_ = removeDir(dir)
+	}()
+
 	// 比较 git 提交记录，判断是否需要执行构建
 	// 优先使用 ssh url
 	var repo string
@@ -603,6 +610,16 @@ func runBuildFlow(task *v1.AllTaskResponse, b biz.Biz, c context.Context, repos 
 			return "", "", "", TaskErr{TaskID: task.ID, Message: err.Error()}
 		}
 	}
+
+	var defaultBadge = "default.png"
+	// 打包成功，插入数据到数据库
+	createResource(c, &v1.CreateResourceRequest{
+		Name:        p.Name,
+		Description: p.Description,
+		Badge:       &defaultBadge,
+		Fake:        false,
+		URL:         nil,
+	})
 
 	return location, sql, sha1, nil
 
@@ -923,4 +940,27 @@ func execCommand(cmd *exec.Cmd) (string, error) {
 
 	return fmt.Sprintf("output: %s", msg), err
 
+}
+
+func createResource(ctx context.Context, r *v1.CreateResourceRequest) {
+	url := "http://192.168.31.120:8989/api/yoo/v1/resources"
+	jsonPayload, err := json.Marshal(r)
+	if err != nil {
+		log.Errorw("Create resource failed: ", "err", err)
+		return
+	}
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(jsonPayload))
+	if err != nil {
+		log.Errorw("Create resource failed: ", "err", err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req.WithContext(ctx))
+	if err != nil {
+		log.Errorw("Create resource failed: ", "err", err)
+		return
+	}
+	defer resp.Body.Close()
 }
